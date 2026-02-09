@@ -40,10 +40,52 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // ==========================================
+        // 1. פונקציות עזר ואייקונים (חובה בראש הקובץ)
+        // ==========================================
+        
         function isNightTime() {
             const h = new Date().getHours();
             return h >= 23 || h < 6;
         }
+
+        function getDayName(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { weekday: 'short' });
+        }
+        
+        function getDateShort(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+        }
+
+        // הגדרת האייקונים כאובייקט קבוע
+        const Icons = {
+            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
+            CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
+            Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/></svg>,
+            Rain: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
+            Storm: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/><path d="m13 13-2 3h2l-2 3"/></svg>,
+            Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+            Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        };
+
+        // פונקציית בחירת אייקון מזג אוויר - מוגדרת כ-Function רגיל כדי שתהיה זמינה לכולם
+        function getWeatherIcon(code) {
+            if (code === undefined) return <Icons.Sun />;
+            if (code <= 1) return <Icons.Sun />;
+            if (code <= 3) return <Icons.CloudSun />;
+            if (code <= 48) return <Icons.Cloud />;
+            if (code <= 67) return <Icons.Rain />;
+            if (code <= 99) return <Icons.Storm />;
+            return <Icons.CloudSun />;
+        }
+
+        // ==========================================
+        // 2. הגדרות ונתונים
+        // ==========================================
 
         const FIREBASE_CONFIG = {
             apiKey: "AIzaSyCumvAyzyyD28N90zj6YQcHJnKI5n7OyWw",
@@ -90,13 +132,17 @@
             ]
         };
 
-        // --- Data Management ---
+        // ==========================================
+        // 4. ניהול דאטה
+        // ==========================================
         let db = null;
         let dbDisabled = false;
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
                 db = firebase.firestore();
             }
         } catch (e) {
@@ -105,10 +151,7 @@
         }
 
         const useData = (collectionName, initialValue) => {
-            // זהו המפתח הקבוע מעכשיו ולתמיד. לא משנים אותו יותר.
-            // זה יאחד את כל המכשירים למקור אחד.
-            const STORAGE_KEY = collectionName + "_production"; 
-
+            const STORAGE_KEY = collectionName + "_v13"; 
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -125,12 +168,9 @@
                     try {
                         unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
-                                const remoteData = doc.data().items;
-                                setData(remoteData);
-                                localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
+                                setData(doc.data().items);
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(doc.data().items));
                             } else {
-                                // המערכת יוצרת את המסמך אם הוא לא קיים - זה תקין!
-                                // זה קורה רק בפעם הראשונה, או אם מחקת את המסד ידנית.
                                 db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
                                   .catch(err => {
                                       if (err.code === 'permission-denied') {
@@ -158,39 +198,9 @@
             return [data, updateData];
         };
 
-        // --- Components ---
-
-        const getDayName = (dateStr) => {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('he-IL', { weekday: 'short' });
-        };
-        
-        const getDateShort = (dateStr) => {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
-        };
-        
-        const Icons = {
-            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
-            CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
-            Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/></svg>,
-            Rain: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
-            Storm: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/><path d="m13 13-2 3h2l-2 3"/></svg>,
-            Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
-            Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        };
-
-        const WeatherIcon = ({ code }) => {
-            if (code === undefined) return <Icons.Sun />;
-            if (code <= 1) return <Icons.Sun />;
-            if (code <= 3) return <Icons.CloudSun />;
-            if (code <= 48) return <Icons.Cloud />;
-            if (code <= 67) return <Icons.Rain />;
-            if (code <= 99) return <Icons.Storm />;
-            return <Icons.CloudSun />;
-        };
+        // ==========================================
+        // 5. רכיבי ממשק
+        // ==========================================
 
         const OfflineBanner = ({ show }) => {
             if (!show) return null;
@@ -233,12 +243,14 @@
                 };
             }, [enabled]);
 
-            return <audio ref={audioRef} src={MUSIC_URL} loop />;
+            return (
+                <audio ref={audioRef} src={MUSIC_URL} loop />
+            );
         };
 
         const Controls = ({ musicEnabled, toggleMusic, isPlaying }) => {
             return (
-                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity p-2 bg-black/80 rounded-full border border-gray-700">
+                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity p-2 bg-black/60 rounded-full border border-gray-700">
                     <a href="#admin" className="text-white hover:text-yellow-400 transition p-2" title="ניהול">
                         <i data-lucide="settings" className="w-5 h-5"></i>
                     </a>
@@ -320,7 +332,7 @@
                             <div className="flex items-center gap-8 bg-gray-800/40 px-10 rounded-2xl border border-gray-700/50 shadow-lg w-full max-w-4xl justify-between">
                                 <div className="flex items-center gap-4">
                                     <div className="w-16 h-16 transform scale-125">
-                                        <WeatherIcon code={weather.current_weather.weathercode} />
+                                        {getWeatherIcon(weather.current_weather.weathercode)}
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-5xl font-bold text-yellow-400">{Math.round(weather.current_weather.temperature)}°</span>
@@ -334,7 +346,7 @@
                                             <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
                                             
                                             <div className="w-8 h-8">
-                                                <WeatherIcon code={weather.daily.weathercode ? weather.daily.weathercode[i] : undefined} />
+                                                {(weather.daily.weathercode && weather.daily.weathercode[i] !== undefined) ? getWeatherIcon(weather.daily.weathercode[i]) : <Icons.Sun />}
                                             </div>
                                             
                                             <div className="text-sm font-mono"><span className="font-bold text-white">{weather.daily.temperature_2m_max && weather.daily.temperature_2m_max[i] ? Math.round(weather.daily.temperature_2m_max[i]) : '-'}°</span></div>
@@ -410,7 +422,7 @@
                                         success = true;
                                         break;
                                     }
-                                } else { // xml
+                                } else { 
                                     const text = await res.text();
                                     if (!text.includes("rss")) continue;
                                     const parser = new DOMParser();
@@ -488,7 +500,6 @@
                 <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 bg-black group">
                     {approvedSlides.map((slide, index) => (
                         <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
-                            {/* Changed to object-contain to ensure whole image is visible without cropping */}
                             <img src={slide.url} className="w-full h-full object-contain bg-black" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
                         </div>
@@ -627,10 +638,6 @@
                         return;
                     }
                     setFile(selected);
-                    try {
-                        const url = URL.createObjectURL(selected);
-                        setPreview(url);
-                    } catch(e) {}
                 }
             };
 
@@ -676,10 +683,10 @@
                                 <div className="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center hover:bg-gray-750 transition cursor-pointer relative min-h-[200px] flex flex-col items-center justify-center overflow-hidden">
                                     <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" required />
                                     
-                                    {preview ? (
-                                        <div className="w-full h-full flex flex-col items-center">
-                                            <img src={preview} alt="Preview" className="h-40 object-contain rounded-lg mb-2" />
-                                            <span className="text-green-400 font-bold text-sm truncate w-full">{file.name}</span>
+                                    {file ? (
+                                        <div className="w-full h-full flex flex-col items-center justify-center">
+                                            <i data-lucide="check-circle" className="w-16 h-16 text-green-500 mb-2"></i>
+                                            <span className="text-green-400 font-bold text-lg truncate w-full text-center px-4">{file.name}</span>
                                             <span className="text-xs text-gray-500 mt-1">לחץ להחלפה</span>
                                         </div>
                                     ) : (
@@ -778,6 +785,7 @@
             }
 
             const pendingSlides = slides.filter(s => s.status === 'pending');
+            const approvedSlides = slides.filter(s => s.status === 'approved');
             const daysNames = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
             return (
@@ -790,11 +798,12 @@
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
+                        
                         {/* 1. אישור תמונות */}
                         {pendingSlides.length > 0 && (
                             <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-yellow-400">
-                                    <i data-lucide="image" className="w-5 h-5"></i> תמונות ממתינות לאישור
+                                    <i data-lucide="image-plus" className="w-5 h-5"></i> תמונות ממתינות לאישור
                                 </h2>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     {pendingSlides.map(s => (
@@ -809,6 +818,23 @@
                                 </div>
                             </section>
                         )}
+                        
+                        {/* 1.5. תמונות פעילות (חדש - מחיקת תמונות שרצות) */}
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i data-lucide="image" className="w-5 h-5"></i> תמונות באוויר (פעילות)
+                            </h2>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {approvedSlides.map(s => (
+                                    <div key={s.id} className="relative group">
+                                        <img src={s.url} className="w-full h-32 object-cover rounded-lg" />
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                            <button onClick={() => deleteSlide(s.id)} className="bg-red-500 p-2 rounded-full"><i data-lucide="trash" className="w-4 h-4"></i></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
 
                         {/* 2. סטטוסים */}
                         <section className="bg-gray-800 p-6 rounded-2xl">
@@ -970,10 +996,13 @@
 
                     {!night && <NewsTicker />}
                     
-                    {/* כפתורים נסתרים בתחתית */}
-                    <div className="absolute bottom-0 left-0 w-24 h-12 z-50 opacity-0 hover:opacity-100 flex items-center justify-center gap-2 bg-black/50 transition-opacity rounded-tr-xl">
-                         <a href="#admin" className="text-white bg-gray-700 p-2 rounded-full"><i data-lucide="settings" className="w-4 h-4"></i></a>
-                    </div>
+                    {/* כפתורי בקרה קבועים בתחתית */}
+                    <Controls 
+                        musicEnabled={settings && settings.musicEnabled} 
+                        toggleMusic={() => setSettings({...settings, musicEnabled: !(settings && settings.musicEnabled)})}
+                        // אם יש מוזיקה שמתנגנת בפועל, הרכיב למעלה ידע את זה, אבל כאן נסתמך על ההגדרה
+                        isPlaying={settings && settings.musicEnabled}
+                    />
                 </div>
             );
         };
