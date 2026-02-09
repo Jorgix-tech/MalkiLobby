@@ -39,29 +39,9 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+        const apiKey = ""; // המערכת תשתמש במפתח שיוזן בממשק הניהול
 
-        // ==========================================
-        // 1. פונקציות עזר ואייקונים (חובה בראש הקובץ)
-        // ==========================================
-        
-        function isNightTime() {
-            const h = new Date().getHours();
-            return h >= 23 || h < 6;
-        }
-
-        function getDayName(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('he-IL', { weekday: 'short' });
-        }
-        
-        function getDateShort(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
-        }
-
-        // הגדרת האייקונים כאובייקט קבוע
+        // --- אייקונים (SVG קבוע ליציבות) ---
         const Icons = {
             Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
             CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
@@ -71,21 +51,6 @@
             Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
             Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         };
-
-        // פונקציית בחירת אייקון מזג אוויר - מוגדרת כ-Function רגיל כדי שתהיה זמינה לכולם
-        function getWeatherIcon(code) {
-            if (code === undefined) return <Icons.Sun />;
-            if (code <= 1) return <Icons.Sun />;
-            if (code <= 3) return <Icons.CloudSun />;
-            if (code <= 48) return <Icons.Cloud />;
-            if (code <= 67) return <Icons.Rain />;
-            if (code <= 99) return <Icons.Storm />;
-            return <Icons.CloudSun />;
-        }
-
-        // ==========================================
-        // 2. הגדרות ונתונים
-        // ==========================================
 
         const FIREBASE_CONFIG = {
             apiKey: "AIzaSyCumvAyzyyD28N90zj6YQcHJnKI5n7OyWw",
@@ -106,7 +71,7 @@
         const MUSIC_URL = "https://archive.org/download/GymnopedieNo1/GymnopedieNo1.mp3";
 
         const INITIAL_DATA = {
-            settings: { musicEnabled: true, volume: 0.15 },
+            settings: { musicEnabled: true, volume: 0.15, geminiKey: "" },
             messages: [
                 { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." },
                 { id: 2, title: "תזכורת", content: "נא לא להשאיר אופניים בלובי הכניסה." },
@@ -132,17 +97,13 @@
             ]
         };
 
-        // ==========================================
-        // 4. ניהול דאטה
-        // ==========================================
+        // --- Data Management ---
         let db = null;
         let dbDisabled = false;
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(FIREBASE_CONFIG);
-                }
+                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
                 db = firebase.firestore();
             }
         } catch (e) {
@@ -151,7 +112,7 @@
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName + "_v13"; 
+            const STORAGE_KEY = collectionName + "_final_v2"; 
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -163,7 +124,6 @@
             
             useEffect(() => {
                 let unsubscribe = () => {};
-                
                 if (db && !dbDisabled) {
                     try {
                         unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
@@ -172,15 +132,9 @@
                                 localStorage.setItem(STORAGE_KEY, JSON.stringify(doc.data().items));
                             } else {
                                 db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
-                                  .catch(err => {
-                                      if (err.code === 'permission-denied') {
-                                          console.warn("Firestore: Permission denied (Offline Mode Active)");
-                                          dbDisabled = true;
-                                      }
-                                  });
+                                  .catch(err => { if(err.code === 'permission-denied') dbDisabled = true; });
                             }
                         }, error => {
-                            console.warn("Firestore offline mode");
                             dbDisabled = true;
                         });
                     } catch (e) { dbDisabled = true; }
@@ -198,9 +152,63 @@
             return [data, updateData];
         };
 
-        // ==========================================
-        // 5. רכיבי ממשק
-        // ==========================================
+        function isNightTime() {
+            const h = new Date().getHours();
+            return h >= 23 || h < 6;
+        }
+
+        function getDayName(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { weekday: 'short' });
+        }
+        
+        function getDateShort(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+        }
+
+        const WeatherIcon = ({ code }) => {
+            if (code === undefined) return <Icons.Sun />;
+            if (code <= 1) return <Icons.Sun />;
+            if (code <= 3) return <Icons.CloudSun />;
+            if (code <= 48) return <Icons.Cloud />;
+            if (code <= 67) return <Icons.Rain />;
+            if (code <= 99) return <Icons.Storm />;
+            return <Icons.CloudSun />;
+        };
+
+        // --- Gemini AI Integration ---
+        const generateGeminiText = async (prompt, key) => {
+            if (!key) return null;
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `אתה עוזר לוועד בית בבניין מגורים. נסח הודעה רשמית, מנומסת, קצרה וברורה (עד 20 מילים) לדיירים על סמך הטקסט הבא: '${prompt}'. אל תוסיף הקדמות, רק את ההודעה.` 
+                            }]
+                        }]
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.candidates && data.candidates[0].content.parts[0].text) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                }
+                return null;
+            } catch (error) {
+                console.error("Gemini Error:", error);
+                return null;
+            }
+        };
+
+        // --- Components ---
 
         const OfflineBanner = ({ show }) => {
             if (!show) return null;
@@ -213,7 +221,6 @@
 
         const BackgroundMusic = ({ enabled, volume }) => {
             const audioRef = useRef(null);
-
             useEffect(() => {
                 const audio = audioRef.current;
                 if (audio) {
@@ -221,9 +228,7 @@
                     if (enabled) {
                         const playPromise = audio.play();
                         if (playPromise !== undefined) {
-                            playPromise.catch(error => {
-                                console.log("Autoplay prevented");
-                            });
+                            playPromise.catch(error => { console.log("Autoplay prevented"); });
                         }
                     } else {
                         audio.pause();
@@ -243,14 +248,12 @@
                 };
             }, [enabled]);
 
-            return (
-                <audio ref={audioRef} src={MUSIC_URL} loop />
-            );
+            return <audio ref={audioRef} src={MUSIC_URL} loop />;
         };
 
         const Controls = ({ musicEnabled, toggleMusic, isPlaying }) => {
             return (
-                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity p-2 bg-black/60 rounded-full border border-gray-700">
+                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity p-2 bg-black/80 rounded-full border border-gray-700">
                     <a href="#admin" className="text-white hover:text-yellow-400 transition p-2" title="ניהול">
                         <i data-lucide="settings" className="w-5 h-5"></i>
                     </a>
@@ -332,7 +335,7 @@
                             <div className="flex items-center gap-8 bg-gray-800/40 px-10 rounded-2xl border border-gray-700/50 shadow-lg w-full max-w-4xl justify-between">
                                 <div className="flex items-center gap-4">
                                     <div className="w-16 h-16 transform scale-125">
-                                        {getWeatherIcon(weather.current_weather.weathercode)}
+                                        <WeatherIcon code={weather.current_weather.weathercode} />
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-5xl font-bold text-yellow-400">{Math.round(weather.current_weather.temperature)}°</span>
@@ -346,7 +349,7 @@
                                             <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
                                             
                                             <div className="w-8 h-8">
-                                                {(weather.daily.weathercode && weather.daily.weathercode[i] !== undefined) ? getWeatherIcon(weather.daily.weathercode[i]) : <Icons.Sun />}
+                                                <WeatherIcon code={weather.daily.weathercode ? weather.daily.weathercode[i] : undefined} />
                                             </div>
                                             
                                             <div className="text-sm font-mono"><span className="font-bold text-white">{weather.daily.temperature_2m_max && weather.daily.temperature_2m_max[i] ? Math.round(weather.daily.temperature_2m_max[i]) : '-'}°</span></div>
@@ -397,9 +400,9 @@
                         const targetUrl = `https://www.ynet.co.il/Integration/StoryRss1854.xml?t=${timestamp}`;
                         
                         const sources = [
-                            { url: `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`, type: 'json' },
-                            { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, type: 'xml' },
-                            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, type: 'xml' }
+                            { url: `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'json' },
+                            { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'xml' },
+                            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'xml' }
                         ];
 
                         let success = false;
@@ -581,6 +584,7 @@
                             return (
                                 <div key={item.id} className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${display.isActive ? 'bg-gray-700/50 border-green-500/30' : 'bg-gray-800/30 border-gray-700'} text-center transition-all`}>
                                     <div className={`p-2 rounded-full mb-2 ${display.colorClass}`}>
+                                        {/* שימוש באייקון של Lucide באמצעות createIcons */}
                                         <i data-lucide={item.icon} className="w-6 h-6"></i>
                                     </div>
                                     <span className="text-sm font-bold text-gray-200 mb-1">{display.label}</span>
@@ -628,8 +632,8 @@
             const [file, setFile] = useState(null);
             const [loading, setLoading] = useState(false);
             const [message, setMessage] = useState("");
-            const [preview, setPreview] = useState(null);
 
+            // ביטול מנגנון ה-Preview המורכב שגרם לקריסה
             const handleFileChange = (e) => {
                 const selected = e.target.files[0];
                 if (selected) {
@@ -658,7 +662,6 @@
                     onUpload(updatedSlides);
                     setLoading(false);
                     setFile(null);
-                    setPreview(null);
                     setMessage("התמונה נשלחה לאישור הוועד. תודה!");
                     setTimeout(() => setMessage(""), 5000);
                 };
@@ -685,6 +688,7 @@
                                     
                                     {file ? (
                                         <div className="w-full h-full flex flex-col items-center justify-center">
+                                            {/* אייקון פשוט במקום Preview */}
                                             <i data-lucide="check-circle" className="w-16 h-16 text-green-500 mb-2"></i>
                                             <span className="text-green-400 font-bold text-lg truncate w-full text-center px-4">{file.name}</span>
                                             <span className="text-xs text-gray-500 mt-1">לחץ להחלפה</span>
@@ -718,6 +722,11 @@
             const [messages, setMessages] = useState(data.messages);
             const [status, setStatus] = useState(data.status);
             const [slides, setSlides] = useState(data.slides);
+
+            // עדכון משתנה בעת שינוי
+            const updateSettings = (key, value) => {
+                setSettings({...settings, [key]: value});
+            };
 
             const addMessage = () => {
                 const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
@@ -756,6 +765,31 @@
                 setMessages(messages.map(m => m.id === id ? { ...m, [field]: value } : m));
             };
             
+            // --- Gemini Logic ---
+            const [aiLoading, setAiLoading] = useState(null); // stores id of message being generated
+
+            const handleAiRewrite = async (msgId, text) => {
+                if (!text || text.length < 3) return;
+                
+                // Use key from settings or fallback to the hardcoded/env one
+                const key = settings.geminiKey || apiKey;
+                
+                if (!key) {
+                    alert("נא להגדיר מפתח Gemini API בהגדרות המערכת תחילה.");
+                    return;
+                }
+
+                setAiLoading(msgId);
+                const newText = await generateGeminiText(text, key);
+                setAiLoading(null);
+
+                if (newText) {
+                    updateMessage(msgId, 'content', newText);
+                } else {
+                    alert("שגיאה ביצירת תוכן. בדוק את המפתח או נסה שנית.");
+                }
+            };
+
             const handleSave = () => {
                 onUpdate({ settings, messages, status, slides, qrCodes: data.qrCodes });
                 alert("הנתונים נשמרו בהצלחה!");
@@ -798,7 +832,34 @@
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
-                        
+                        {/* הגדרות כלליות */}
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i data-lucide="settings" className="w-5 h-5"></i> הגדרות מערכת
+                            </h2>
+                            <div className="grid gap-4">
+                                <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
+                                    <span>מוזיקת רקע</span>
+                                    <button 
+                                        onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)}
+                                        className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                    >
+                                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.musicEnabled ? 'right-1' : 'right-7'}`}></div>
+                                    </button>
+                                </div>
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <label className="block text-sm text-gray-400 mb-2">Gemini API Key (עבור AI)</label>
+                                    <input 
+                                        type="password"
+                                        value={settings.geminiKey || ""}
+                                        onChange={(e) => updateSettings('geminiKey', e.target.value)}
+                                        placeholder="הדבק כאן את המפתח..."
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    />
+                                </div>
+                            </div>
+                        </section>
+
                         {/* 1. אישור תמונות */}
                         {pendingSlides.length > 0 && (
                             <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
@@ -899,23 +960,35 @@
                             </div>
                             <div className="space-y-4">
                                 {messages.map(m => (
-                                    <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group">
+                                    <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group items-start">
                                         <button onClick={() => removeMessage(m.id)} className="absolute top-2 left-2 text-red-400 bg-gray-900 p-1 rounded-full opacity-60 hover:opacity-100 z-10">
                                             <i data-lucide="trash-2" className="w-4 h-4"></i>
                                         </button>
-                                        <input 
-                                            value={m.title} 
-                                            onChange={(e) => updateMessage(m.id, 'title', e.target.value)}
-                                            className="bg-gray-900 border border-gray-600 rounded p-2 text-yellow-400 font-bold w-full md:w-1/4"
-                                            placeholder="כותרת"
-                                        />
-                                        <textarea 
-                                            value={m.content} 
-                                            onChange={(e) => updateMessage(m.id, 'content', e.target.value)}
-                                            className="bg-gray-900 border border-gray-600 rounded p-2 w-full"
-                                            rows="2"
-                                            placeholder="תוכן ההודעה"
-                                        />
+                                        
+                                        <div className="w-full flex-1">
+                                            <input 
+                                                value={m.title} 
+                                                onChange={(e) => updateMessage(m.id, 'title', e.target.value)}
+                                                className="bg-gray-900 border border-gray-600 rounded p-2 text-yellow-400 font-bold w-full mb-2"
+                                                placeholder="כותרת"
+                                            />
+                                            <div className="relative">
+                                                <textarea 
+                                                    value={m.content} 
+                                                    onChange={(e) => updateMessage(m.id, 'content', e.target.value)}
+                                                    className="bg-gray-900 border border-gray-600 rounded p-2 w-full pl-10"
+                                                    rows="2"
+                                                    placeholder="תוכן ההודעה (או כתוב טיוטה ולחץ על הניצוץ)"
+                                                />
+                                                <button 
+                                                    onClick={() => handleAiRewrite(m.id, m.content)}
+                                                    className={`absolute bottom-2 left-2 p-1 rounded-full hover:bg-purple-600/50 text-purple-400 transition ${aiLoading === m.id ? 'animate-spin' : ''}`}
+                                                    title="שכתב עם AI (Gemini)"
+                                                >
+                                                    {aiLoading === m.id ? <i data-lucide="loader-2" className="w-5 h-5"></i> : <i data-lucide="sparkles" className="w-5 h-5"></i>}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
