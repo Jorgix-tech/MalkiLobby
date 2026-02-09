@@ -72,6 +72,7 @@
             Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         };
 
+        // רכיב מזג אוויר מסודר
         const WeatherIcon = ({ code }) => {
             if (code === undefined) return <Icons.Sun />;
             if (code <= 1) return <Icons.Sun />;
@@ -131,22 +132,26 @@
             ]
         };
 
-        // --- Data Management ---
+        // ==========================================
+        // 4. ניהול דאטה
+        // ==========================================
         let db = null;
         let dbDisabled = false;
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
                 db = firebase.firestore();
             }
         } catch (e) {
-            console.warn("Firebase init failed:", e);
+            console.warn("Firebase init skipped/failed:", e);
             dbDisabled = true;
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName + "_v21"; 
+            const STORAGE_KEY = collectionName + "_v23"; 
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -158,17 +163,25 @@
             
             useEffect(() => {
                 let unsubscribe = () => {};
+                
                 if (db && !dbDisabled) {
                     try {
-                        unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
+                        unsubscribe = db.collection('appData').doc(collectionName).onSnapshot(doc => {
                             if (doc.exists) {
-                                setData(doc.data().items);
-                                localStorage.setItem(STORAGE_KEY, JSON.stringify(doc.data().items));
+                                const remoteData = doc.data().items;
+                                setData(remoteData);
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
                             } else {
-                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
-                                  .catch(err => { if(err.code === 'permission-denied') dbDisabled = true; });
+                                db.collection('appData').doc(collectionName).set({ items: initialValue })
+                                  .catch(err => {
+                                      if (err.code === 'permission-denied') {
+                                          console.warn("Firestore: Permission denied (Offline Mode Active)");
+                                          dbDisabled = true;
+                                      }
+                                  });
                             }
                         }, error => {
+                            console.warn("Firestore offline mode");
                             dbDisabled = true;
                         });
                     } catch (e) { dbDisabled = true; }
@@ -180,9 +193,16 @@
                 setData(newData);
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
                 if (db && !dbDisabled) {
-                    db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {});
+                    db.collection('appData').doc(collectionName).set({ items: newData }).catch(err => {
+                        console.warn("Cloud save failed:", err.code);
+                        if (err.code === 'permission-denied') {
+                            alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
+                            dbDisabled = true;
+                        }
+                    });
                 }
             };
+
             return [data, updateData];
         };
 
@@ -324,6 +344,7 @@
                                 </div>
                                 <div className="h-16 w-px bg-gray-600"></div>
                                 <div className="flex gap-4">
+                                    {/* תחזית ל-7 ימים מלאים */}
                                     {[0, 1, 2, 3, 4, 5, 6].map(i => (
                                         <div key={i} className="flex flex-col items-center gap-1 min-w-[3.5rem]">
                                             <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
@@ -359,12 +380,17 @@
                  if (!pubDate) return "--:--";
                  try {
                      let dateStr = pubDate.replace(/-/g, '/');
-                     if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
-                         dateStr += " UTC";
-                     }
-                     const d = new Date(dateStr);
-                     if (isNaN(d.getTime())) return "--:--";
                      
+                     if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
+                         // זה UTC, נוסיף שעתיים ידנית
+                         const d = new Date(dateStr);
+                         d.setHours(d.getHours() + 2);
+                         const hours = d.getHours().toString().padStart(2, '0');
+                         const minutes = d.getMinutes().toString().padStart(2, '0');
+                         return `${hours}:${minutes}`;
+                     }
+                     
+                     const d = new Date(dateStr);
                      return d.toLocaleTimeString('he-IL', {
                          hour: '2-digit',
                          minute: '2-digit',
@@ -405,9 +431,9 @@
                                         success = true;
                                         break;
                                     }
-                                } else { 
+                                } else { // xml
                                     const text = await res.text();
-                                    if (!text.includes("rss")) continue;
+                                    if (!text.includes("rss") && !text.includes("xml")) continue;
                                     const parser = new DOMParser();
                                     const xmlDoc = parser.parseFromString(text, "text/xml");
                                     const items = Array.from(xmlDoc.querySelectorAll("item"));
@@ -619,8 +645,8 @@
             const [file, setFile] = useState(null);
             const [loading, setLoading] = useState(false);
             const [message, setMessage] = useState("");
+            const [preview, setPreview] = useState(null);
 
-            // ביטול מנגנון ה-Preview המורכב שגרם לקריסה
             const handleFileChange = (e) => {
                 const selected = e.target.files[0];
                 if (selected) {
@@ -649,6 +675,7 @@
                     onUpload(updatedSlides);
                     setLoading(false);
                     setFile(null);
+                    setPreview(null);
                     setMessage("התמונה נשלחה לאישור הוועד. תודה!");
                     setTimeout(() => setMessage(""), 5000);
                 };
@@ -675,7 +702,6 @@
                                     
                                     {file ? (
                                         <div className="w-full h-full flex flex-col items-center justify-center">
-                                            {/* אייקון פשוט במקום Preview */}
                                             <i data-lucide="check-circle" className="w-16 h-16 text-green-500 mb-2"></i>
                                             <span className="text-green-400 font-bold text-lg truncate w-full text-center px-4">{file.name}</span>
                                             <span className="text-xs text-gray-500 mt-1">לחץ להחלפה</span>
@@ -709,6 +735,7 @@
             const [messages, setMessages] = useState(data.messages);
             const [status, setStatus] = useState(data.status);
             const [slides, setSlides] = useState(data.slides);
+            const [qrCodes, setQrCodes] = useState(data.qrCodes);
 
             const addMessage = () => {
                 const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
@@ -747,8 +774,12 @@
                 setMessages(messages.map(m => m.id === id ? { ...m, [field]: value } : m));
             };
             
+            const updateQr = (id, field, value) => {
+                setQrCodes(qrCodes.map(q => q.id === id ? { ...q, [field]: value } : q));
+            };
+
             const handleSave = () => {
-                onUpdate({ settings, messages, status, slides, qrCodes: data.qrCodes });
+                onUpdate({ settings, messages, status, slides, qrCodes });
                 alert("הנתונים נשמרו בהצלחה!");
             };
 
@@ -910,6 +941,35 @@
                                 ))}
                             </div>
                         </section>
+
+                        {/* 4. ניהול ברקודים (חדש!) */}
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i data-lucide="qr-code" className="w-5 h-5"></i> ניהול ברקודים (QR)
+                            </h2>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {qrCodes.map(qr => (
+                                    <div key={qr.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
+                                        <div className="mb-2">
+                                            <label className="text-xs text-gray-400 font-bold">כותרת</label>
+                                            <input 
+                                                value={qr.label}
+                                                onChange={(e) => updateQr(qr.id, 'label', e.target.value)}
+                                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-yellow-400 font-bold"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-400 font-bold">קישור (URL)</label>
+                                            <input 
+                                                value={qr.link}
+                                                onChange={(e) => updateQr(qr.id, 'link', e.target.value)}
+                                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr"
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
                     </div>
                 </div>
             );
@@ -944,6 +1004,15 @@
                 handleHashChange(); 
 
                 return () => window.removeEventListener('hashchange', handleHashChange);
+            }, []);
+
+            useEffect(() => {
+                // רענון יזום כל 15 דקות
+                const REFRESH_INTERVAL = 15 * 60 * 1000;
+                const timer = setInterval(() => {
+                    window.location.reload();
+                }, REFRESH_INTERVAL);
+                return () => clearInterval(timer);
             }, []);
 
             useEffect(() => { if(window.lucide) lucide.createIcons(); });
