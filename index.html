@@ -61,7 +61,6 @@
             return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
         }
 
-        // הגדרת האייקונים כאובייקט קבוע
         const Icons = {
             Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
             CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
@@ -72,7 +71,6 @@
             Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         };
 
-        // רכיב מזג אוויר מסודר
         const WeatherIcon = ({ code }) => {
             if (code === undefined) return <Icons.Sun />;
             if (code <= 1) return <Icons.Sun />;
@@ -103,10 +101,14 @@
         const NEWS_LOGO_URL = "https://ynet-pic1.yit.co.il/picserver5/wcm_upload/2024/07/09/B1LH3j5DR/new_logo_gif_ynet.gif";
         const ALERT_CITY = "ראשון לציון";
         const ADMIN_PASSWORD = "1234";
-        const MUSIC_URL = "https://archive.org/download/GymnopedieNo1/GymnopedieNo1.mp3";
+        const DEFAULT_MUSIC_URL = "https://archive.org/download/GymnopedieNo1/GymnopedieNo1.mp3";
 
         const INITIAL_DATA = {
-            settings: { musicEnabled: true, volume: 0.15 },
+            settings: { 
+                musicEnabled: true, 
+                volume: 0.15,
+                musicUrl: DEFAULT_MUSIC_URL 
+            },
             messages: [
                 { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." },
                 { id: 2, title: "תזכורת", content: "נא לא להשאיר אופניים בלובי הכניסה." },
@@ -132,56 +134,43 @@
             ]
         };
 
-        // ==========================================
-        // 4. ניהול דאטה
-        // ==========================================
+        // --- Data Management ---
         let db = null;
         let dbDisabled = false;
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(FIREBASE_CONFIG);
-                }
+                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
                 db = firebase.firestore();
             }
         } catch (e) {
-            console.warn("Firebase init skipped/failed:", e);
+            console.warn("Firebase init failed:", e);
             dbDisabled = true;
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName + "_v19"; 
+            const STORAGE_KEY = collectionName + "_v20"; 
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
                     return cached ? JSON.parse(cached) : initialValue;
-                } catch (e) {
-                    return initialValue;
-                }
+                } catch (e) { return initialValue; }
             });
             
             useEffect(() => {
                 let unsubscribe = () => {};
-                
                 if (db && !dbDisabled) {
                     try {
-                        unsubscribe = db.collection('appData').doc(collectionName).onSnapshot(doc => {
+                        unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
                                 const remoteData = doc.data().items;
                                 setData(remoteData);
-                                localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(doc.data().items));
                             } else {
-                                db.collection('appData').doc(collectionName).set({ items: initialValue })
-                                  .catch(err => {
-                                      if (err.code === 'permission-denied') {
-                                          console.warn("Firestore: Permission denied (Offline Mode Active)");
-                                          dbDisabled = true;
-                                      }
-                                  });
+                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
+                                  .catch(err => { if(err.code === 'permission-denied') dbDisabled = true; });
                             }
                         }, error => {
-                            console.warn("Firestore offline mode");
                             dbDisabled = true;
                         });
                     } catch (e) { dbDisabled = true; }
@@ -193,16 +182,9 @@
                 setData(newData);
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
                 if (db && !dbDisabled) {
-                    db.collection('appData').doc(collectionName).set({ items: newData }).catch(err => {
-                        console.warn("Cloud save failed:", err.code);
-                        if (err.code === 'permission-denied') {
-                            alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
-                            dbDisabled = true;
-                        }
-                    });
+                    db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {});
                 }
             };
-
             return [data, updateData];
         };
 
@@ -219,7 +201,7 @@
             );
         };
 
-        const BackgroundMusic = ({ enabled, volume }) => {
+        const BackgroundMusic = ({ enabled, volume, url }) => {
             const audioRef = useRef(null);
             useEffect(() => {
                 const audio = audioRef.current;
@@ -234,7 +216,7 @@
                         audio.pause();
                     }
                 }
-            }, [enabled, volume]);
+            }, [enabled, volume, url]);
             
             useEffect(() => {
                 const enableSound = () => {
@@ -248,7 +230,7 @@
                 };
             }, [enabled]);
 
-            return <audio ref={audioRef} src={MUSIC_URL} loop />;
+            return <audio ref={audioRef} src={url || DEFAULT_MUSIC_URL} loop />;
         };
 
         const Controls = ({ musicEnabled, toggleMusic, isPlaying }) => {
@@ -344,13 +326,11 @@
                                 </div>
                                 <div className="h-16 w-px bg-gray-600"></div>
                                 <div className="flex gap-4">
-                                    {/* תחזית ל-7 ימים מלאים */}
                                     {[0, 1, 2, 3, 4, 5, 6].map(i => (
                                         <div key={i} className="flex flex-col items-center gap-1 min-w-[3.5rem]">
                                             <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
                                             
                                             <div className="w-8 h-8">
-                                                {/* שימוש נכון ברכיב WeatherIcon */}
                                                 <WeatherIcon code={weather.daily.weathercode ? weather.daily.weathercode[i] : undefined} />
                                             </div>
                                             
@@ -383,7 +363,6 @@
                      let dateStr = pubDate.replace(/-/g, '/');
                      
                      if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
-                         // זה UTC, נוסיף שעתיים ידנית
                          const d = new Date(dateStr);
                          d.setHours(d.getHours() + 2);
                          const hours = d.getHours().toString().padStart(2, '0');
@@ -432,9 +411,9 @@
                                         success = true;
                                         break;
                                     }
-                                } else { // xml
+                                } else { 
                                     const text = await res.text();
-                                    if (!text.includes("rss") && !text.includes("xml")) continue;
+                                    if (!text.includes("rss")) continue;
                                     const parser = new DOMParser();
                                     const xmlDoc = parser.parseFromString(text, "text/xml");
                                     const items = Array.from(xmlDoc.querySelectorAll("item"));
@@ -598,6 +577,7 @@
                             return (
                                 <div key={item.id} className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${display.isActive ? 'bg-gray-700/50 border-green-500/30' : 'bg-gray-800/30 border-gray-700'} text-center transition-all`}>
                                     <div className={`p-2 rounded-full mb-2 ${display.colorClass}`}>
+                                        {/* שימוש באייקון של Lucide באמצעות createIcons */}
                                         <i data-lucide={item.icon} className="w-6 h-6"></i>
                                     </div>
                                     <span className="text-sm font-bold text-gray-200 mb-1">{display.label}</span>
@@ -645,6 +625,7 @@
             const [file, setFile] = useState(null);
             const [loading, setLoading] = useState(false);
             const [message, setMessage] = useState("");
+            const [preview, setPreview] = useState(null);
 
             const handleFileChange = (e) => {
                 const selected = e.target.files[0];
@@ -654,6 +635,10 @@
                         return;
                     }
                     setFile(selected);
+                    try {
+                        const url = URL.createObjectURL(selected);
+                        setPreview(url);
+                    } catch(e) {}
                 }
             };
 
@@ -674,6 +659,7 @@
                     onUpload(updatedSlides);
                     setLoading(false);
                     setFile(null);
+                    setPreview(null);
                     setMessage("התמונה נשלחה לאישור הוועד. תודה!");
                     setTimeout(() => setMessage(""), 5000);
                 };
@@ -698,10 +684,10 @@
                                 <div className="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center hover:bg-gray-750 transition cursor-pointer relative min-h-[200px] flex flex-col items-center justify-center overflow-hidden">
                                     <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" required />
                                     
-                                    {file ? (
-                                        <div className="w-full h-full flex flex-col items-center justify-center">
-                                            <i data-lucide="check-circle" className="w-16 h-16 text-green-500 mb-2"></i>
-                                            <span className="text-green-400 font-bold text-lg truncate w-full text-center px-4">{file.name}</span>
+                                    {preview ? (
+                                        <div className="w-full h-full flex flex-col items-center">
+                                            <img src={preview} alt="Preview" className="h-40 object-contain rounded-lg mb-2" />
+                                            <span className="text-green-400 font-bold text-sm truncate w-full">{file.name}</span>
                                             <span className="text-xs text-gray-500 mt-1">לחץ להחלפה</span>
                                         </div>
                                     ) : (
@@ -733,6 +719,11 @@
             const [messages, setMessages] = useState(data.messages);
             const [status, setStatus] = useState(data.status);
             const [slides, setSlides] = useState(data.slides);
+
+            // עדכון הגדרות כלליות
+            const updateSettings = (key, value) => {
+                setSettings({ ...settings, [key]: value });
+            };
 
             const addMessage = () => {
                 const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
@@ -813,6 +804,58 @@
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
+                        {/* הגדרות כלליות */}
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i data-lucide="settings" className="w-5 h-5"></i> הגדרות מערכת
+                            </h2>
+                            
+                            <div className="grid gap-4">
+                                {/* שליטה במוזיקה */}
+                                <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold">מוזיקת רקע</span>
+                                        <span className="text-xs text-gray-400">הפעלה/כיבוי של הנגן האוטומטי</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)}
+                                        className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                    >
+                                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.musicEnabled ? 'right-1' : 'right-7'}`}></div>
+                                    </button>
+                                </div>
+
+                                {/* קישור למוזיקה */}
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <label className="block text-sm font-bold mb-2">קישור לקובץ מוזיקה (MP3)</label>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            value={settings.musicUrl || DEFAULT_MUSIC_URL}
+                                            onChange={(e) => updateSettings('musicUrl', e.target.value)}
+                                            className="bg-gray-900 border border-gray-600 rounded p-2 text-sm flex-1 text-left ltr"
+                                            placeholder="https://example.com/music.mp3"
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-1">מומלץ להשתמש בקישור ישיר לקובץ. השאר ריק לברירת מחדל.</p>
+                                </div>
+
+                                {/* ווליום */}
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <div className="flex justify-between mb-2">
+                                        <label className="text-sm font-bold">עוצמת שמע</label>
+                                        <span className="text-xs text-yellow-400">{Math.round((settings.volume || 0.15) * 100)}%</span>
+                                    </div>
+                                    <input 
+                                        type="range" 
+                                        min="0" max="1" step="0.05"
+                                        value={settings.volume || 0.15}
+                                        onChange={(e) => updateSettings('volume', parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                    />
+                                </div>
+                            </div>
+                        </section>
+
                         {/* 1. אישור תמונות */}
                         {pendingSlides.length > 0 && (
                             <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
@@ -989,7 +1032,11 @@
 
             return (
                 <div className={`h-screen w-screen text-white flex flex-col font-sans overflow-hidden ${night ? 'bg-black' : 'bg-[#111]'}`}>
-                    <BackgroundMusic enabled={settings && settings.musicEnabled} volume={(settings && settings.volume) || 0.2} />
+                    <BackgroundMusic 
+                        enabled={settings && settings.musicEnabled} 
+                        volume={(settings && settings.volume) || 0.15} 
+                        url={settings && settings.musicUrl}
+                    />
                     <OfflineBanner show={offline || dbDisabled} />
                     <RedAlertSystem />
                     <TopHeader />
@@ -1011,9 +1058,12 @@
                     {!night && <NewsTicker />}
                     
                     {/* כפתורי בקרה קבועים בתחתית */}
-                    <div className="absolute bottom-0 left-0 w-24 h-12 z-50 opacity-0 hover:opacity-100 flex items-center justify-center gap-2 bg-black/50 transition-opacity rounded-tr-xl">
-                         <a href="#admin" className="text-white bg-gray-700 p-2 rounded-full"><i data-lucide="settings" className="w-4 h-4"></i></a>
-                    </div>
+                    <Controls 
+                        musicEnabled={settings && settings.musicEnabled} 
+                        toggleMusic={() => setSettings({...settings, musicEnabled: !(settings && settings.musicEnabled)})}
+                        // אם יש מוזיקה שמתנגנת בפועל, הרכיב למעלה ידע את זה, אבל כאן נסתמך על ההגדרה
+                        isPlaying={settings && settings.musicEnabled}
+                    />
                 </div>
             );
         };
