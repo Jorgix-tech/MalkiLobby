@@ -67,7 +67,6 @@
         const ADMIN_PASSWORD = "1234";
         const MUSIC_URL = "https://archive.org/download/GymnopedieNo1/GymnopedieNo1.mp3";
 
-        // נוספו פרמטרים להקטנת גודל התמונות (חסכון ברוחב פס)
         const INITIAL_DATA = {
             settings: { musicEnabled: true, volume: 0.15 },
             messages: [
@@ -90,8 +89,8 @@
                 { id: 4, label: "העלאת תמונות", link: window.location.href.split('#')[0] + "#upload" }
             ],
             slides: [
-                { id: 1, url: "https://images.unsplash.com/photo-1460317442991-0ec209397118?q=60&w=1080&auto=format&fit=crop", status: 'approved' },
-                { id: 2, url: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?q=60&w=1080&auto=format&fit=crop", status: 'approved' }
+                { id: 1, url: "https://images.unsplash.com/photo-1460317442991-0ec209397118?q=80&w=2070&auto=format&fit=crop", status: 'approved' },
+                { id: 2, url: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?q=80&w=2070&auto=format&fit=crop", status: 'approved' }
             ]
         };
 
@@ -114,8 +113,7 @@
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName + "_v7"; 
-
+            const STORAGE_KEY = collectionName + "_v8"; 
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -225,6 +223,31 @@
 
             return (
                 <audio ref={audioRef} src={MUSIC_URL} loop />
+            );
+        };
+
+        const Controls = ({ musicEnabled, toggleMusic, isPlaying }) => {
+            return (
+                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity p-2 bg-black/60 rounded-full">
+                    {/* כפתור ניהול */}
+                    <a href="#admin" className="text-white hover:text-yellow-400 transition p-1" title="ניהול">
+                        <i data-lucide="settings" className="w-5 h-5"></i>
+                    </a>
+                    
+                    {/* כפתור העלאה */}
+                    <a href="#upload" className="text-white hover:text-blue-400 transition p-1" title="העלאת תמונה">
+                        <i data-lucide="upload-cloud" className="w-5 h-5"></i>
+                    </a>
+
+                    {/* כפתור מוזיקה */}
+                    <button 
+                        onClick={toggleMusic}
+                        className={`p-1 transition ${isPlaying ? 'text-green-400' : 'text-red-400'}`}
+                        title={isPlaying ? "השתק" : "הפעל"}
+                    >
+                        <i data-lucide={isPlaying ? "volume-2" : "volume-x"} className="w-5 h-5"></i>
+                    </button>
+                </div>
             );
         };
 
@@ -356,6 +379,7 @@
                     const timestamp = new Date().getTime();
                     const targetUrl = `https://www.ynet.co.il/Integration/StoryRss1854.xml?t=${timestamp}`;
                     
+                    // רשימת שרתי פרוקסי + rss2json לגיבוי
                     const sources = [
                         { url: `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`, type: 'json' },
                         { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, type: 'xml' },
@@ -434,10 +458,6 @@
                                 ))}
                             </span>
                         </div>
-                    </div>
-                    
-                    <div className="absolute bottom-1 left-1 z-50 opacity-10 hover:opacity-100 transition-opacity flex gap-2">
-                         <a href="#admin" className="text-white bg-black/50 p-2 rounded-full hover:bg-black/80 transition"><i data-lucide="settings" className="w-4 h-4"></i></a>
                     </div>
                 </div>
             );
@@ -846,7 +866,7 @@
                             <div className="space-y-4">
                                 {messages.map(m => (
                                     <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group">
-                                        <button onClick={() => removeMessage(m.id)} className="absolute top-2 left-2 text-red-400 opacity-0 group-hover:opacity-100">
+                                        <button onClick={() => removeMessage(m.id)} className="absolute top-2 left-2 text-red-400 bg-gray-900 p-1 rounded-full opacity-60 hover:opacity-100 z-10">
                                             <i data-lucide="trash-2" className="w-4 h-4"></i>
                                         </button>
                                         <input 
@@ -942,10 +962,13 @@
 
                     {!night && <NewsTicker />}
                     
-                    {/* כפתורים נסתרים בתחתית */}
-                    <div className="absolute bottom-0 left-0 w-24 h-12 z-50 opacity-0 hover:opacity-100 flex items-center justify-center gap-2 bg-black/50 transition-opacity rounded-tr-xl">
-                         <a href="#admin" className="text-white bg-gray-700 p-2 rounded-full"><i data-lucide="settings" className="w-4 h-4"></i></a>
-                    </div>
+                    {/* כפתורי בקרה קבועים בתחתית */}
+                    <Controls 
+                        musicEnabled={settings && settings.musicEnabled} 
+                        toggleMusic={() => setSettings({...settings, musicEnabled: !(settings && settings.musicEnabled)})}
+                        // אם יש מוזיקה שמתנגנת בפועל, הרכיב למעלה ידע את זה, אבל כאן נסתמך על ההגדרה
+                        isPlaying={settings && settings.musicEnabled}
+                    />
                 </div>
             );
         };
