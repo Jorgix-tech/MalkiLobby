@@ -1,4 +1,4 @@
-<!-- MASTER V2.8 - STABILITY FIXES (Lucide Isolation) -->
+<!-- MASTER V3.0 - STABLE CDN & RENDER FIX -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lobby Dashboard - Park Malki</title>
     
-    <!-- ספריות בסיס -->
+    <!-- ספריות בסיס - הוחלפו ל-CDN יציב יותר -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -577,7 +577,6 @@
                 <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 bg-black group">
                     {approvedSlides.map((slide, index) => (
                         <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
-                            {/* Changed to object-contain to ensure whole image is visible without cropping */}
                             <img src={slide.url} className="w-full h-full object-contain bg-black" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
                         </div>
@@ -747,37 +746,6 @@
                 </div>
             );
         };
-
-        const CommitteeBoard = ({ messages, qrCodes }) => {
-            return (
-                <div className="bg-gray-900/95 rounded-3xl p-6 h-full border border-gray-700 flex flex-col shadow-xl backdrop-blur-sm relative">
-                    <div className="flex items-center gap-3 mb-4 border-b border-gray-700 pb-4 shrink-0">
-                        <div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div>
-                        <h2 className="text-2xl font-bold text-white">הודעות ועד הבית</h2>
-                    </div>
-                    <div className="space-y-4 overflow-y-auto pr-2 flex-1 custom-scrollbar mb-6 h-full">
-                        {messages.map((msg) => (
-                            <div key={msg.id} className="bg-gray-800/60 p-4 rounded-xl border-r-4 border-yellow-500 hover:bg-gray-800 transition shadow-sm mb-3">
-                                <h3 className="text-lg font-bold text-yellow-400 mb-1">{msg.title}</h3>
-                                <p className="text-gray-300 text-base leading-relaxed">{msg.content}</p>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="mt-auto pt-4 border-t border-gray-700">
-                        <h3 className="text-center text-gray-400 text-sm mb-3">קישורים שימושיים</h3>
-                        <div className="flex justify-between gap-2">
-                            {qrCodes.map((qr) => (
-                                <QRCode key={qr.id} label={qr.label} link={qr.link} />
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🔐 ממשקי ניהול
-        // ==========================================
 
         const UploadView = ({ slides, community, onUploadSlides, onUploadCommunity }) => {
             const [tab, setTab] = useState('image'); // 'image' or 'community'
@@ -959,11 +927,17 @@
                 onUpdate({ settings, messages, status, slides, qrCodes, community, events });
                 alert("הנתונים נשמרו בהצלחה!");
             };
+            
+             // Back button logic using clean URL reset
+            const handleBack = (e) => {
+                e.preventDefault();
+                window.location.href = window.location.pathname; 
+            };
 
             if (!auth) {
                 return (
                     <div className="min-h-screen bg-black flex items-center justify-center p-4 font-sans">
-                        <a href="#" className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition">
+                        <a href="#" onClick={handleBack} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition">
                             <SafeLucide name="arrow-right" className="w-6 h-6 text-white" />
                         </a>
                         <div className="bg-gray-900 p-8 rounded-2xl border border-gray-700 w-full max-w-sm text-center">
@@ -989,13 +963,14 @@
             const pendingSlides = slides.filter(s => s.status === 'pending');
             const approvedSlides = slides.filter(s => s.status === 'approved');
             const pendingCommunity = community.filter(c => c.status === 'pending');
+            const approvedCommunity = community.filter(c => c.status === 'approved');
             const daysNames = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
             return (
                 <div className="h-screen page-admin text-white p-4 font-sans dir-rtl">
                     <header className="flex justify-between items-center mb-8 bg-gray-800 p-4 rounded-xl sticky top-0 z-50 shadow-lg">
                          <div className="flex items-center gap-4">
-                            <a href="#" className="bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition">
+                            <a href="#" onClick={handleBack} className="bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition">
                                 <SafeLucide name="arrow-right" className="w-5 h-5" />
                             </a>
                             <h1 className="text-2xl font-bold text-yellow-400">ניהול מסך לובי</h1>
@@ -1100,6 +1075,30 @@
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </section>
+
+                        {/* מודעות קהילה פעילות - שוחזר */}
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <SafeLucide name="hand-heart" className="w-5 h-5" /> מודעות קהילה פעילות
+                            </h2>
+                            <div className="space-y-3">
+                                {approvedCommunity.map(c => (
+                                    <div key={c.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                        <div>
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 ${c.type === 'give' ? 'bg-green-900 text-green-300' : 'bg-purple-900 text-purple-300'}`}>
+                                                {c.type === 'give' ? 'למסירה' : 'אבידה'}
+                                            </span>
+                                            <span className="font-bold">{c.content}</span>
+                                            <span className="text-gray-400 text-xs mr-2">({c.contact})</span>
+                                        </div>
+                                        <button onClick={() => deleteCommunity(c.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                    </div>
+                                ))}
+                                {approvedCommunity.length === 0 && (
+                                    <p className="text-gray-500 text-sm">אין מודעות קהילה פעילות כרגע.</p>
+                                )}
                             </div>
                         </section>
                         
@@ -1237,6 +1236,17 @@
                 handleHash();
                 return () => window.removeEventListener('hashchange', handleHash);
             }, []);
+            
+            // Auto Refresh for Display Mode
+            useEffect(() => {
+                const REFRESH_INTERVAL = 15 * 60 * 1000;
+                const timer = setInterval(() => {
+                    if (window.location.hash !== '#admin' && window.location.hash !== '#upload') {
+                         window.location.reload();
+                    }
+                }, REFRESH_INTERVAL);
+                return () => clearInterval(timer);
+            }, []);
 
             if (view === 'upload') return <UploadView slides={slides} community={community} onUploadSlides={setSlides} onUploadCommunity={setCommunity} />;
             
@@ -1276,8 +1286,16 @@
             );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // הוספתי בדיקה ש-React מוכן לפני הריצה
+        window.addEventListener('load', () => {
+            if (typeof ReactDOM !== 'undefined') {
+                const root = ReactDOM.createRoot(document.getElementById('root'));
+                root.render(<App />);
+            } else {
+                console.error("ReactDOM failed to load");
+                document.getElementById('root').innerHTML = '<div style="color:white; text-align:center; padding: 20px;">שגיאה בטעינת המערכת (CDN). נא לרענן.</div>';
+            }
+        });
     </script>
 </body>
 </html>
