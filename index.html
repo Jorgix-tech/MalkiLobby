@@ -151,7 +151,10 @@
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName + "_v23"; 
+            // שם קבוע ונקי - ללא סיומות גרסה!
+            // מכאן והלאה המידע נשמר בשמות: messages, status, settings וכו'
+            const STORAGE_KEY = collectionName; 
+
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -166,13 +169,13 @@
                 
                 if (db && !dbDisabled) {
                     try {
-                        unsubscribe = db.collection('appData').doc(collectionName).onSnapshot(doc => {
+                        unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
                                 const remoteData = doc.data().items;
                                 setData(remoteData);
                                 localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
                             } else {
-                                db.collection('appData').doc(collectionName).set({ items: initialValue })
+                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
                                   .catch(err => {
                                       if (err.code === 'permission-denied') {
                                           console.warn("Firestore: Permission denied (Offline Mode Active)");
@@ -193,7 +196,7 @@
                 setData(newData);
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
                 if (db && !dbDisabled) {
-                    db.collection('appData').doc(collectionName).set({ items: newData }).catch(err => {
+                    db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
                         console.warn("Cloud save failed:", err.code);
                         if (err.code === 'permission-denied') {
                             alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
@@ -344,7 +347,6 @@
                                 </div>
                                 <div className="h-16 w-px bg-gray-600"></div>
                                 <div className="flex gap-4">
-                                    {/* תחזית ל-7 ימים מלאים */}
                                     {[0, 1, 2, 3, 4, 5, 6].map(i => (
                                         <div key={i} className="flex flex-col items-center gap-1 min-w-[3.5rem]">
                                             <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
@@ -380,17 +382,12 @@
                  if (!pubDate) return "--:--";
                  try {
                      let dateStr = pubDate.replace(/-/g, '/');
-                     
                      if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
-                         // זה UTC, נוסיף שעתיים ידנית
-                         const d = new Date(dateStr);
-                         d.setHours(d.getHours() + 2);
-                         const hours = d.getHours().toString().padStart(2, '0');
-                         const minutes = d.getMinutes().toString().padStart(2, '0');
-                         return `${hours}:${minutes}`;
+                         dateStr += " UTC";
                      }
-                     
                      const d = new Date(dateStr);
+                     if (isNaN(d.getTime())) return "--:--";
+                     
                      return d.toLocaleTimeString('he-IL', {
                          hour: '2-digit',
                          minute: '2-digit',
@@ -433,7 +430,7 @@
                                     }
                                 } else { // xml
                                     const text = await res.text();
-                                    if (!text.includes("rss") && !text.includes("xml")) continue;
+                                    if (!text.includes("rss")) continue;
                                     const parser = new DOMParser();
                                     const xmlDoc = parser.parseFromString(text, "text/xml");
                                     const items = Array.from(xmlDoc.querySelectorAll("item"));
@@ -1007,10 +1004,13 @@
             }, []);
 
             useEffect(() => {
-                // רענון יזום כל 15 דקות
+                // רענון יזום כל 15 דקות כדי למנוע ניתוקים ולנקות זיכרון
+                // מבוטל אם המשתמש במצב Admin
                 const REFRESH_INTERVAL = 15 * 60 * 1000;
                 const timer = setInterval(() => {
-                    window.location.reload();
+                    if (window.location.hash !== '#admin' && window.location.hash !== '#upload') {
+                         window.location.reload();
+                    }
                 }, REFRESH_INTERVAL);
                 return () => clearInterval(timer);
             }, []);
