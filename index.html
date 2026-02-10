@@ -1,3 +1,4 @@
+<!-- MASTER V2.7 - STABILITY FIXES (removeChild) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -19,11 +20,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Heebo', sans-serif; background-color: #111; color: white; margin: 0; padding: 0; }
-        .page-admin { overflow-y: auto; background: #1a1a1a; }
+        body { font-family: 'Heebo', sans-serif; background-color: #111; color: white; margin: 0; padding: 0; overflow: hidden; }
+        .page-admin { height: 100vh; overflow-y: auto; background: #1a1a1a; }
         @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(100%); } }
-        @keyframes pulse-red { 0%, 100% { background-color: rgba(220, 38, 38, 0.95); } 50% { background-color: rgba(153, 27, 27, 0.95); } }
-        .alert-active { animation: pulse-red 2s infinite; }
+        @keyframes highlight-pulse { 0%, 100% { border-color: rgba(234, 179, 8, 0.5); background-color: rgba(234, 179, 8, 0.1); } 50% { border-color: rgba(234, 179, 8, 1); background-color: rgba(234, 179, 8, 0.2); } }
+        .event-today { animation: highlight-pulse 2s infinite; border: 2px solid; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
@@ -101,13 +102,14 @@
         const NEWS_LOGO_URL = "https://ynet-pic1.yit.co.il/picserver5/wcm_upload/2024/07/09/B1LH3j5DR/new_logo_gif_ynet.gif";
         const ALERT_CITY = "ראשון לציון";
         const ADMIN_PASSWORD = "1234";
-        const DEFAULT_MUSIC_URL = "https://archive.org/download/GymnopedieNo1/GymnopedieNo1.mp3";
+        const DEFAULT_MUSIC_URL = "https://archive.org/download/y-2mate.com-relaxing-jazz-slow-jazz-music-for-relax-sleep-study-work-background-music/y2mate.com%20-%20%E3%80%90Relaxing%20Jazz%E3%80%91Slow%20Jazz%20Music%20For%20Relax%2CSleep%2CStudy%2CWork%20-%20Background%20Music.mp3";
 
         const INITIAL_DATA = {
             settings: { 
                 musicEnabled: true, 
                 volume: 0.15,
-                musicUrl: DEFAULT_MUSIC_URL 
+                musicUrl: DEFAULT_MUSIC_URL,
+                geminiKey: "" 
             },
             messages: [
                 { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." },
@@ -140,16 +142,17 @@
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
                 db = firebase.firestore();
             }
         } catch (e) {
-            console.warn("Firebase init failed:", e);
+            console.warn("Firebase init skipped/failed:", e);
             dbDisabled = true;
         }
 
         const useData = (collectionName, initialValue) => {
-            // חזרה לשמות נקיים כדי לשמור על הנתונים הקיימים ולא לדרוס
             const STORAGE_KEY = collectionName; 
 
             const [data, setData] = useState(() => {
@@ -168,17 +171,14 @@
                         unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
                                 const remoteData = doc.data().items;
-                                // מיזוג חכם: אם מדובר באובייקט (כמו הגדרות), נשלים שדות חסרים מתוך ברירת המחדל
                                 if (!Array.isArray(remoteData) && typeof remoteData === 'object') {
-                                    setData({ ...initialValue, ...remoteData });
+                                     setData({ ...initialValue, ...remoteData });
                                 } else {
-                                    setData(remoteData);
+                                     setData(remoteData);
                                 }
                                 localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
                             } else {
-                                // אם המסמך לא קיים בכלל (פעם ראשונה), ניצור אותו
-                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue })
-                                  .catch(err => { if(err.code === 'permission-denied') dbDisabled = true; });
+                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue }).catch(e => {});
                             }
                         }, error => {
                             dbDisabled = true;
@@ -193,19 +193,66 @@
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
                 if (db && !dbDisabled) {
                     db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
-                        console.warn("Cloud save failed:", err.code);
                         if (err.code === 'permission-denied') {
-                            alert("שגיאה: אין הרשאת כתיבה לענן. הנתונים נשמרו מקומית בלבד.");
+                            alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
                         }
                     });
                 }
             };
+
             return [data, updateData];
         };
 
-        // ==========================================
-        // 5. רכיבי ממשק
-        // ==========================================
+        // --- Fetch Hebrew Holidays ---
+        const useHebrewCalendar = () => {
+            const [holidays, setHolidays] = useState([]);
+            useEffect(() => {
+                const fetchHolidays = async () => {
+                    try {
+                        const res = await fetch(`https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&nx=on&year=now&month=x&ss=on&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                const upcoming = data.items.filter(item => {
+                                    const itemDate = new Date(item.date);
+                                    return itemDate >= new Date(new Date().setDate(new Date().getDate() - 1));
+                                }).map(item => ({
+                                    id: 'heb_' + item.date,
+                                    date: item.date,
+                                    title: item.hebrew,
+                                    type: 'holiday'
+                                }));
+                                setHolidays(upcoming.slice(0, 3));
+                            }
+                        }
+                    } catch (e) { console.log("Calendar fetch failed"); }
+                };
+                fetchHolidays();
+            }, []);
+            return holidays;
+        };
+
+        // --- Gemini AI Integration ---
+        const generateGeminiText = async (prompt, key) => {
+            if (!key) return null;
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `אתה עוזר לוועד בית. נסח הודעה רשמית וקצרה לדיירים על בסיס: '${prompt}'.` }] }]
+                    })
+                });
+                const data = await response.json();
+                if (data.candidates && data.candidates[0].content.parts[0].text) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                }
+                return null;
+            } catch (error) { return null; }
+        };
+
+        // --- 3. COMPONENTS ---
 
         const OfflineBanner = ({ show }) => {
             if (!show) return null;
@@ -216,8 +263,9 @@
             );
         };
 
-        const BackgroundMusic = ({ enabled, volume, url }) => {
+        const BackgroundMusic = ({ enabled, volume, url, setIsBlocked }) => {
             const audioRef = useRef(null);
+            
             useEffect(() => {
                 const audio = audioRef.current;
                 if (audio) {
@@ -225,17 +273,26 @@
                     if (enabled) {
                         const playPromise = audio.play();
                         if (playPromise !== undefined) {
-                            playPromise.catch(error => { console.log("Autoplay prevented"); });
+                            playPromise.then(() => {
+                                if(setIsBlocked) setIsBlocked(false);
+                            }).catch(error => {
+                                if(setIsBlocked) setIsBlocked(true);
+                            });
                         }
                     } else {
                         audio.pause();
+                        if(setIsBlocked) setIsBlocked(false);
                     }
                 }
             }, [enabled, volume, url]);
             
             useEffect(() => {
                 const enableSound = () => {
-                    if (audioRef.current && enabled) { audioRef.current.play().catch(e => {}); }
+                    if (audioRef.current && enabled) { 
+                        audioRef.current.play()
+                        .then(() => { if(setIsBlocked) setIsBlocked(false); })
+                        .catch(e => {}); 
+                    }
                 };
                 window.addEventListener('click', enableSound);
                 window.addEventListener('touchstart', enableSound);
@@ -245,10 +302,14 @@
                 };
             }, [enabled]);
 
-            return <audio ref={audioRef} src={url || DEFAULT_MUSIC_URL} loop />;
+            return (
+                <div className="hidden">
+                     <audio ref={audioRef} src={url || DEFAULT_MUSIC_URL} loop />
+                </div>
+            );
         };
 
-        const Controls = ({ musicEnabled, toggleMusic, isPlaying }) => {
+        const Controls = ({ musicEnabled, toggleMusic, isBlocked }) => {
             return (
                 <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity p-2 bg-black/80 rounded-full border border-gray-700">
                     <a href="#admin" className="text-white hover:text-yellow-400 transition p-2" title="ניהול">
@@ -259,10 +320,10 @@
                     </a>
                     <button 
                         onClick={toggleMusic}
-                        className={`p-2 transition ${isPlaying ? 'text-green-400' : 'text-red-400'}`}
-                        title={isPlaying ? "השתק" : "הפעל"}
+                        className={`p-2 transition ${isBlocked ? 'text-red-500 animate-pulse font-bold' : (musicEnabled ? 'text-green-400' : 'text-red-400')}`}
+                        title={isBlocked ? "הסאונד נחסם - לחץ כאן להפעלה" : (musicEnabled ? "השתק" : "הפעל")}
                     >
-                        <i data-lucide={isPlaying ? "volume-2" : "volume-x"} className="w-5 h-5"></i>
+                        <i data-lucide={musicEnabled ? "volume-2" : "volume-x"} className="w-5 h-5"></i>
                     </button>
                 </div>
             );
@@ -377,22 +438,15 @@
                  if (!pubDate) return "--:--";
                  try {
                      let dateStr = pubDate.replace(/-/g, '/');
-                     
                      if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
-                         // זה UTC, נוסיף שעתיים ידנית
                          const d = new Date(dateStr);
                          d.setHours(d.getHours() + 2);
                          const hours = d.getHours().toString().padStart(2, '0');
                          const minutes = d.getMinutes().toString().padStart(2, '0');
                          return `${hours}:${minutes}`;
                      }
-                     
                      const d = new Date(dateStr);
-                     return d.toLocaleTimeString('he-IL', {
-                         hour: '2-digit',
-                         minute: '2-digit',
-                         timeZone: 'Asia/Jerusalem'
-                     });
+                     return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
                  } catch(e) { return "--:--"; }
             };
 
@@ -428,9 +482,9 @@
                                         success = true;
                                         break;
                                     }
-                                } else { // xml
+                                } else { 
                                     const text = await res.text();
-                                    if (!text.includes("rss")) continue;
+                                    if (!text.includes("rss") && !text.includes("xml")) continue;
                                     const parser = new DOMParser();
                                     const xmlDoc = parser.parseFromString(text, "text/xml");
                                     const items = Array.from(xmlDoc.querySelectorAll("item"));
@@ -438,14 +492,7 @@
                                         const formatted = items.map(item => {
                                             const title = item.querySelector("title") ? item.querySelector("title").textContent : "";
                                             const pubDate = item.querySelector("pubDate") ? item.querySelector("pubDate").textContent : "";
-                                            
-                                            let timeStr = extractTimeFromDesc(pubDate);
-                                            if (timeStr === "--:--") {
-                                                 const desc = item.querySelector("description") ? item.querySelector("description").textContent : "";
-                                                 timeStr = extractTimeFromDesc(desc);
-                                            }
-
-                                            return { title: title, time: timeStr };
+                                            return { title: title, time: extractTimeFromDesc(pubDate) };
                                         });
                                         setNews(formatted);
                                         localStorage.setItem("cachedNews", JSON.stringify(formatted));
@@ -453,23 +500,16 @@
                                         break;
                                     }
                                 }
-                            } catch (e) {
-                                console.warn("Source failed:", source.url);
-                            }
+                            } catch (e) { }
                         }
 
                         if (!success) {
                             const cached = localStorage.getItem("cachedNews");
-                            if (cached) {
-                                setNews(JSON.parse(cached));
-                            } else {
-                                setNews([{ title: "עדכון חדשות נכשל זמנית", time: "--:--" }]);
-                            }
+                            if (cached) setNews(JSON.parse(cached));
+                            else setNews([{ title: "עדכון חדשות נכשל זמנית", time: "--:--" }]);
                         }
                         setLoading(false);
-                    } catch (e) {
-                         setLoading(false);
-                    }
+                    } catch (e) { setLoading(false); }
                 };
 
                 fetchNews();
@@ -513,6 +553,7 @@
                 <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 bg-black group">
                     {approvedSlides.map((slide, index) => (
                         <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
+                            {/* Changed to object-contain to ensure whole image is visible without cropping */}
                             <img src={slide.url} className="w-full h-full object-contain bg-black" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
                         </div>
@@ -521,16 +562,93 @@
             );
         };
 
-        const QRCode = ({ label, link }) => (
-            <div className="bg-white p-2 rounded-xl flex flex-col items-center gap-1 shadow-lg hover:scale-105 transition-transform duration-300 flex-1 min-w-0">
-                <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link)}`} 
-                    alt={label}
-                    className="w-16 h-16 object-contain mix-blend-multiply"
-                />
-                <span className="text-gray-900 font-bold text-[10px] text-center leading-tight w-full truncate">{label}</span>
-            </div>
-        );
+        const CarouselBoard = ({ messages, community, events, qrCodes }) => {
+            const [tab, setTab] = useState(0); 
+            const holidays = useHebrewCalendar();
+
+            const approvedCommunity = (community || []).filter(c => c.status === 'approved');
+            const allEvents = [...(events || []), ...holidays].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const hasCommunity = approvedCommunity.length > 0;
+            
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setTab(prev => {
+                        let next = prev + 1;
+                        if (next === 1 && !hasCommunity) next = 2;
+                        if (next > 2) next = 0;
+                        return next;
+                    });
+                }, 15000); 
+                return () => clearInterval(interval);
+            }, [hasCommunity]);
+
+            const isEventToday = (dateStr) => {
+                const today = new Date().toISOString().split('T')[0];
+                return dateStr.startsWith(today);
+            };
+
+            return (
+                <div className="bg-gray-900/95 rounded-3xl p-6 h-full border border-gray-700 flex flex-col shadow-xl backdrop-blur-sm relative transition-all duration-500">
+                    <div className="flex items-center gap-3 mb-4 border-b border-gray-700 pb-4 shrink-0 h-16">
+                        {tab === 0 && <React.Fragment><div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div><h2 className="text-2xl font-bold text-white">הודעות ועד הבית</h2></React.Fragment>}
+                        {tab === 1 && <React.Fragment><i data-lucide="hand-heart" className="w-8 h-8 text-pink-500"></i><h2 className="text-2xl font-bold text-white">לוח קהילה</h2></React.Fragment>}
+                        {tab === 2 && <React.Fragment><i data-lucide="calendar" className="w-8 h-8 text-blue-500"></i><h2 className="text-2xl font-bold text-white">אירועים קרובים</h2></React.Fragment>}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
+                        {tab === 0 && messages.map((msg) => (
+                            <div key={msg.id} className="bg-gray-800/60 p-4 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500">
+                                <h3 className="text-lg font-bold text-yellow-400 mb-1">{msg.title}</h3>
+                                <p className="text-gray-300 text-base leading-relaxed">{msg.content}</p>
+                            </div>
+                        ))}
+
+                        {tab === 1 && approvedCommunity.map((item) => (
+                            <div key={item.id} className={`bg-gray-800/60 p-4 rounded-xl border-r-4 mb-3 animate-in fade-in slide-in-from-right-4 duration-500 ${item.type === 'give' ? 'border-green-500' : 'border-purple-500'}`}>
+                                <div className="flex justify-between">
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${item.type === 'give' ? 'bg-green-900 text-green-300' : 'bg-purple-900 text-purple-300'}`}>
+                                        {item.type === 'give' ? 'למסירה' : 'אבידה/מציאה'}
+                                    </span>
+                                    <span className="text-xs text-gray-500">{item.date}</span>
+                                </div>
+                                <h3 className="text-lg font-bold text-white mt-1">{item.content}</h3>
+                                <p className="text-gray-400 text-sm mt-1">{item.contact}</p>
+                            </div>
+                        ))}
+
+                        {tab === 2 && (
+                            <div className="space-y-3">
+                                {allEvents.length === 0 && <div className="text-center text-gray-500 mt-10">אין אירועים קרובים</div>}
+                                {allEvents.map((evt) => (
+                                    <div key={evt.id} className={`flex items-center gap-4 bg-gray-800/60 p-3 rounded-xl border border-gray-700 animate-in fade-in slide-in-from-right-4 duration-500 ${isEventToday(evt.date) ? 'event-today' : ''}`}>
+                                        <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg ${evt.type === 'holiday' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-700 text-white'}`}>
+                                            <span className="text-xl font-bold leading-none">{new Date(evt.date).getDate()}</span>
+                                            <span className="text-[10px]">{new Date(evt.date).toLocaleDateString('he-IL', { month: 'short' })}</span>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-lg">{evt.title}</h3>
+                                            <p className="text-xs text-gray-400">{evt.type === 'holiday' ? 'חג/מועד' : 'אירוע בניין'}</p>
+                                        </div>
+                                        {isEventToday(evt.date) && <span className="mr-auto bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full animate-pulse">היום!</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-auto pt-4 border-t border-gray-700">
+                        <div className="flex justify-between gap-2">
+                            {qrCodes.map((qr) => (
+                                <div key={qr.id} className="bg-white p-1.5 rounded-lg flex flex-col items-center gap-1 shadow-lg w-1/4">
+                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(qr.link)}`} className="w-full object-contain mix-blend-multiply" />
+                                    <span className="text-black font-bold text-[8px] text-center leading-tight truncate w-full">{qr.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         const BuildingStatus = ({ items }) => {
             const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -606,42 +724,12 @@
             );
         };
 
-        const CommitteeBoard = ({ messages, qrCodes }) => {
-            return (
-                <div className="bg-gray-900/95 rounded-3xl p-6 h-full border border-gray-700 flex flex-col shadow-xl backdrop-blur-sm relative">
-                    <div className="flex items-center gap-3 mb-4 border-b border-gray-700 pb-4 shrink-0">
-                        <div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div>
-                        <h2 className="text-2xl font-bold text-white">הודעות ועד הבית</h2>
-                    </div>
-                    <div className="space-y-4 overflow-y-auto pr-2 flex-1 custom-scrollbar mb-6 h-full">
-                        {messages.map((msg) => (
-                            <div key={msg.id} className="bg-gray-800/60 p-4 rounded-xl border-r-4 border-yellow-500 hover:bg-gray-800 transition shadow-sm mb-3">
-                                <h3 className="text-lg font-bold text-yellow-400 mb-1">{msg.title}</h3>
-                                <p className="text-gray-300 text-base leading-relaxed">{msg.content}</p>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="mt-auto pt-4 border-t border-gray-700">
-                        <h3 className="text-center text-gray-400 text-sm mb-3">קישורים שימושיים</h3>
-                        <div className="flex justify-between gap-2">
-                            {qrCodes.map((qr) => (
-                                <QRCode key={qr.id} label={qr.label} link={qr.link} />
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🔐 ממשקי ניהול
-        // ==========================================
-
-        const UploadView = ({ slides, onUpload }) => {
+        const UploadView = ({ slides, community, onUploadSlides, onUploadCommunity }) => {
+            const [tab, setTab] = useState('image'); // 'image' or 'community'
             const [file, setFile] = useState(null);
+            const [textData, setTextData] = useState({ type: 'give', content: '', contact: '' });
             const [loading, setLoading] = useState(false);
             const [message, setMessage] = useState("");
-            const [preview, setPreview] = useState(null);
 
             const handleFileChange = (e) => {
                 const selected = e.target.files[0];
@@ -654,75 +742,62 @@
                 }
             };
 
-            const handleSubmit = (e) => {
+            const handleSubmitImage = (e) => {
                 e.preventDefault();
                 if (!file) return;
                 setLoading(true);
-                
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    const newSlide = {
-                        id: Date.now(),
-                        url: reader.result,
-                        status: 'pending',
-                        date: new Date().toLocaleDateString()
-                    };
-                    const updatedSlides = [...slides, newSlide];
-                    onUpload(updatedSlides);
-                    setLoading(false);
-                    setFile(null);
-                    setMessage("התמונה נשלחה לאישור הוועד. תודה!");
-                    setTimeout(() => setMessage(""), 5000);
+                    onUploadSlides([...slides, { id: Date.now(), url: reader.result, status: 'pending', date: new Date().toLocaleDateString() }]);
+                    setLoading(false); setFile(null); setMessage("התמונה נשלחה לאישור!"); setTimeout(() => setMessage(""), 3000);
                 };
                 reader.readAsDataURL(file);
             };
 
+            const handleSubmitCommunity = (e) => {
+                e.preventDefault();
+                if (!textData.content) return;
+                const newItem = {
+                    id: Date.now(),
+                    ...textData,
+                    status: 'pending',
+                    date: new Date().toLocaleDateString()
+                };
+                onUploadCommunity([...(community || []), newItem]);
+                setTextData({ type: 'give', content: '', contact: '' });
+                setMessage("המודעה נשלחה לאישור!"); setTimeout(() => setMessage(""), 3000);
+            };
+
             return (
                 <div className="min-h-screen bg-gray-900 text-white p-6 flex flex-col items-center justify-center font-sans">
-                    {/* כפתור חזור */}
-                    <a href="#" className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition">
-                         <i data-lucide="arrow-right" className="w-6 h-6 text-white"></i>
-                    </a>
-
-                    <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700">
-                        <div className="text-center mb-8">
-                            <img src={BUILDING_LOGO_URL} className="w-20 h-20 mx-auto mb-4 rounded-full bg-white p-2 object-contain" />
-                            <h1 className="text-2xl font-bold">העלאת תמונה למסך הלובי</h1>
-                            <p className="text-gray-400 mt-2">שתפו אותנו ברגעים יפים מהבניין!</p>
+                    <a href="#" className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full"><i data-lucide="arrow-right"></i></a>
+                    <div className="bg-gray-800 p-6 rounded-2xl w-full max-w-md border border-gray-700">
+                        <div className="flex bg-gray-700 p-1 rounded-lg mb-6">
+                            <button onClick={() => setTab('image')} className={`flex-1 py-2 rounded-md text-sm font-bold transition ${tab === 'image' ? 'bg-gray-600 text-white shadow' : 'text-gray-400'}`}>תמונה למסך</button>
+                            <button onClick={() => setTab('community')} className={`flex-1 py-2 rounded-md text-sm font-bold transition ${tab === 'community' ? 'bg-gray-600 text-white shadow' : 'text-gray-400'}`}>מודעת קהילה</button>
                         </div>
 
-                        {message ? (
-                            <div className="bg-green-500/20 border border-green-500 text-green-300 p-4 rounded-xl text-center mb-6 animate-pulse">
-                                {message}
-                            </div>
-                        ) : (
-                            <form onSubmit={handleSubmit} className="space-y-6">
-                                <div className="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center hover:bg-gray-750 transition cursor-pointer relative min-h-[200px] flex flex-col items-center justify-center overflow-hidden">
-                                    <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" required />
-                                    
-                                    {file ? (
-                                        <div className="w-full h-full flex flex-col items-center justify-center">
-                                            {/* אייקון פשוט במקום Preview */}
-                                            <i data-lucide="check-circle" className="w-16 h-16 text-green-500 mb-2"></i>
-                                            <span className="text-green-400 font-bold text-lg truncate w-full text-center px-4">{file.name}</span>
-                                            <span className="text-xs text-gray-500 mt-1">לחץ להחלפה</span>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center">
-                                            <i data-lucide="upload-cloud" className="w-12 h-12 text-gray-400 mb-2"></i>
-                                            <span className="text-gray-300 font-medium">לחצו לבחירת תמונה</span>
-                                            <span className="text-xs text-gray-500 mt-1">מקסימום 5MB</span>
-                                        </div>
-                                    )}
+                        {message && <div className="bg-green-500/20 text-green-300 p-3 rounded-lg text-center mb-4">{message}</div>}
+
+                        {tab === 'image' ? (
+                            <form onSubmit={handleSubmitImage} className="space-y-4">
+                                <div className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center relative">
+                                    <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full" required />
+                                    {file ? <div className="text-green-400">{file.name}</div> : <div className="text-gray-400">לחץ לבחירת תמונה</div>}
                                 </div>
-                                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-50 shadow-lg">
-                                    {loading ? "מעלה..." : "שלח לאישור"}
-                                </button>
+                                <button disabled={loading} className="w-full bg-blue-600 py-3 rounded-xl font-bold">{loading ? "שולח..." : "שלח תמונה"}</button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleSubmitCommunity} className="space-y-4">
+                                <select value={textData.type} onChange={e => setTextData({...textData, type: e.target.value})} className="w-full bg-gray-900 border border-gray-600 rounded p-3">
+                                    <option value="give">למסירה (חפצים/ריהוט)</option>
+                                    <option value="lost">אבידות ומציאות</option>
+                                </select>
+                                <textarea value={textData.content} onChange={e => setTextData({...textData, content: e.target.value})} placeholder="מה למסירה / מה נמצא?" className="w-full bg-gray-900 border border-gray-600 rounded p-3" rows="3" required />
+                                <input value={textData.contact} onChange={e => setTextData({...textData, contact: e.target.value})} placeholder="פרטים ליצירת קשר (טלפון/דירה)" className="w-full bg-gray-900 border border-gray-600 rounded p-3" required />
+                                <button className="w-full bg-purple-600 py-3 rounded-xl font-bold">פרסם מודעה</button>
                             </form>
                         )}
-                        <div className="text-center mt-6 text-xs text-gray-500">
-                            * התמונות יעברו אישור של הוועד לפני הפרסום
-                        </div>
                     </div>
                 </div>
             );
@@ -736,6 +811,8 @@
             const [messages, setMessages] = useState(data.messages);
             const [status, setStatus] = useState(data.status);
             const [slides, setSlides] = useState(data.slides);
+            const [community, setCommunity] = useState(data.community || []);
+            const [events, setEvents] = useState(data.events || []);
             const [qrCodes, setQrCodes] = useState(data.qrCodes);
 
             const addMessage = () => {
@@ -771,6 +848,27 @@
                 setSlides(slides.filter(s => s.id !== id));
             };
 
+            const approveCommunity = (id) => {
+                setCommunity(community.map(c => c.id === id ? { ...c, status: 'approved' } : c));
+            };
+
+            const deleteCommunity = (id) => {
+                setCommunity(community.filter(c => c.id !== id));
+            };
+
+            const addEvent = () => {
+                const newId = events.length > 0 ? Math.max(...events.map(e => e.id)) + 1 : 1;
+                setEvents([...events, { id: newId, title: "אירוע חדש", date: new Date().toISOString().split('T')[0], type: 'event' }]);
+            };
+
+            const updateEvent = (id, field, value) => {
+                setEvents(events.map(e => e.id === id ? { ...e, [field]: value } : e));
+            };
+
+            const deleteEvent = (id) => {
+                setEvents(events.filter(e => e.id !== id));
+            };
+
             const updateMessage = (id, field, value) => {
                 setMessages(messages.map(m => m.id === id ? { ...m, [field]: value } : m));
             };
@@ -779,20 +877,37 @@
                 setQrCodes(qrCodes.map(q => q.id === id ? { ...q, [field]: value } : q));
             };
             
-            // עדכון הגדרות כלליות
             const updateSettings = (key, value) => {
                 setSettings({ ...settings, [key]: value });
             };
+            
+            const [aiLoading, setAiLoading] = useState(null); 
+
+            const handleAiRewrite = async (msgId, text) => {
+                if (!text || text.length < 3) return;
+                const key = settings.geminiKey;
+                if (!key) {
+                    alert("נא להגדיר מפתח Gemini API בהגדרות המערכת תחילה.");
+                    return;
+                }
+                setAiLoading(msgId);
+                const newText = await generateGeminiText(text, key);
+                setAiLoading(null);
+                if (newText) {
+                    updateMessage(msgId, 'content', newText);
+                } else {
+                    alert("שגיאה ביצירת תוכן.");
+                }
+            };
 
             const handleSave = () => {
-                onUpdate({ settings, messages, status, slides, qrCodes });
+                onUpdate({ settings, messages, status, slides, qrCodes, community, events });
                 alert("הנתונים נשמרו בהצלחה!");
             };
 
             if (!auth) {
                 return (
                     <div className="min-h-screen bg-black flex items-center justify-center p-4 font-sans">
-                        {/* כפתור חזור */}
                         <a href="#" className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition">
                             <i data-lucide="arrow-right" className="w-6 h-6 text-white"></i>
                         </a>
@@ -818,13 +933,13 @@
 
             const pendingSlides = slides.filter(s => s.status === 'pending');
             const approvedSlides = slides.filter(s => s.status === 'approved');
+            const pendingCommunity = community.filter(c => c.status === 'pending');
             const daysNames = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
             return (
-                <div className="min-h-screen page-admin text-white p-4 font-sans dir-rtl">
+                <div className="h-screen page-admin text-white p-4 font-sans dir-rtl">
                     <header className="flex justify-between items-center mb-8 bg-gray-800 p-4 rounded-xl sticky top-0 z-50 shadow-lg">
                          <div className="flex items-center gap-4">
-                            {/* כפתור חזור בראש הדף */}
                             <a href="#" className="bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition">
                                 <i data-lucide="arrow-right" className="w-5 h-5"></i>
                             </a>
@@ -836,19 +951,13 @@
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
-                        {/* הגדרות כלליות */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <i data-lucide="settings" className="w-5 h-5"></i> הגדרות מערכת
                             </h2>
-                            
                             <div className="grid gap-4">
-                                {/* שליטה במוזיקה */}
                                 <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
-                                    <div className="flex flex-col">
-                                        <span className="font-bold">מוזיקת רקע</span>
-                                        <span className="text-xs text-gray-400">הפעלה/כיבוי של הנגן האוטומטי</span>
-                                    </div>
+                                    <span className="font-bold">מוזיקת רקע</span>
                                     <button 
                                         onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)}
                                         className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
@@ -856,51 +965,66 @@
                                         <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.musicEnabled ? 'right-1' : 'right-7'}`}></div>
                                     </button>
                                 </div>
-
-                                {/* קישור למוזיקה */}
                                 <div className="bg-gray-700/50 p-4 rounded-xl">
                                     <label className="block text-sm font-bold mb-2">קישור לקובץ מוזיקה (MP3)</label>
-                                    <div className="flex gap-2">
-                                        <input 
-                                            value={settings.musicUrl || DEFAULT_MUSIC_URL}
-                                            onChange={(e) => updateSettings('musicUrl', e.target.value)}
-                                            className="bg-gray-900 border border-gray-600 rounded p-2 text-sm flex-1 text-left dir-ltr"
-                                            placeholder="https://example.com/music.mp3"
-                                        />
-                                    </div>
-                                    <p className="text-[10px] text-gray-400 mt-1">מומלץ להשתמש בקישור ישיר לקובץ. השאר ריק לברירת מחדל.</p>
+                                    <input 
+                                        value={settings.musicUrl || DEFAULT_MUSIC_URL}
+                                        onChange={(e) => updateSettings('musicUrl', e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded p-2 text-sm flex-1 text-left dir-ltr w-full"
+                                        placeholder="https://example.com/music.mp3"
+                                    />
                                 </div>
-
-                                {/* ווליום */}
                                 <div className="bg-gray-700/50 p-4 rounded-xl">
                                     <div className="flex justify-between mb-2">
                                         <label className="text-sm font-bold">עוצמת שמע</label>
                                         <span className="text-xs text-yellow-400">{Math.round((settings.volume || 0.15) * 100)}%</span>
                                     </div>
                                     <input 
-                                        type="range" 
-                                        min="0" max="1" step="0.05"
+                                        type="range" min="0" max="1" step="0.05"
                                         value={settings.volume || 0.15}
                                         onChange={(e) => updateSettings('volume', parseFloat(e.target.value))}
                                         className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500"
                                     />
                                 </div>
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <label className="block text-sm font-bold mb-2">Gemini API Key (עבור שכתוב הודעות)</label>
+                                    <input 
+                                        type="password"
+                                        value={settings.geminiKey || ""}
+                                        onChange={(e) => updateSettings('geminiKey', e.target.value)}
+                                        placeholder="הדבק כאן את המפתח..."
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    />
+                                </div>
                             </div>
                         </section>
 
-                        {/* 1. אישור תמונות */}
-                        {pendingSlides.length > 0 && (
+                        {(pendingSlides.length > 0 || pendingCommunity.length > 0) && (
                             <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-yellow-400">
-                                    <i data-lucide="image-plus" className="w-5 h-5"></i> תמונות ממתינות לאישור
+                                    <i data-lucide="check-square" className="w-5 h-5"></i> אישורים ממתינים
                                 </h2>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="space-y-4">
                                     {pendingSlides.map(s => (
-                                        <div key={s.id} className="relative group">
-                                            <img src={s.url} className="w-full h-32 object-cover rounded-lg" />
-                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                        <div key={s.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                <img src={s.url} className="w-16 h-16 object-cover rounded" />
+                                                <span>תמונה חדשה</span>
+                                            </div>
+                                            <div className="flex gap-2">
                                                 <button onClick={() => approveSlide(s.id)} className="bg-green-500 p-2 rounded-full"><i data-lucide="check" className="w-4 h-4"></i></button>
                                                 <button onClick={() => deleteSlide(s.id)} className="bg-red-500 p-2 rounded-full"><i data-lucide="trash" className="w-4 h-4"></i></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {pendingCommunity.map(c => (
+                                        <div key={c.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                            <div>
+                                                <span className="font-bold text-pink-400">{c.type === 'give' ? 'למסירה' : 'אבידה'}</span>: {c.content}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => approveCommunity(c.id)} className="bg-green-500 p-2 rounded-full"><i data-lucide="check" className="w-4 h-4"></i></button>
+                                                <button onClick={() => deleteCommunity(c.id)} className="bg-red-500 p-2 rounded-full"><i data-lucide="trash" className="w-4 h-4"></i></button>
                                             </div>
                                         </div>
                                     ))}
@@ -908,7 +1032,6 @@
                             </section>
                         )}
                         
-                        {/* 1.5. תמונות פעילות (חדש - מחיקת תמונות שרצות) */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <i data-lucide="image" className="w-5 h-5"></i> תמונות באוויר (פעילות)
@@ -924,53 +1047,50 @@
                                 ))}
                             </div>
                         </section>
+                        
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><i data-lucide="calendar" className="w-5 h-5"></i> אירועים קרובים</h2>
+                                <button onClick={addEvent} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">+ אירוע</button>
+                            </div>
+                            <div className="space-y-3">
+                                {events.map(evt => (
+                                    <div key={evt.id} className="flex gap-3 items-center bg-gray-700/30 p-2 rounded-lg">
+                                        <input type="date" value={evt.date} onChange={e => updateEvent(evt.id, 'date', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2" />
+                                        <input value={evt.title} onChange={e => updateEvent(evt.id, 'title', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 flex-1" placeholder="שם האירוע" />
+                                        <button onClick={() => deleteEvent(evt.id)} className="text-red-400 p-2"><i data-lucide="trash" className="w-4 h-4"></i></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
 
-                        {/* 2. סטטוסים */}
                         <section className="bg-gray-800 p-6 rounded-2xl">
                             <h2 className="text-xl font-bold mb-4">סטטוסים בבניין</h2>
                             <div className="space-y-4">
                                 {status.map(s => {
-                                    if (s.type === 'system') return null; // דלג על אוטומטי
-                                    
+                                    if (s.type === 'system') return null;
                                     return (
                                     <div key={s.id} className="bg-gray-700/30 p-4 rounded-xl border border-gray-600">
                                         <div className="flex items-center gap-3 mb-3">
                                             <div className="bg-gray-600 p-2 rounded-lg"><i data-lucide={s.icon} className="w-5 h-5"></i></div>
                                             <span className="font-bold text-lg">{s.label}</span>
                                         </div>
-                                        
                                         {s.type === 'schedule' ? (
                                             <div>
                                                 <p className="text-xs text-gray-400 mb-2">ימי פעילות:</p>
                                                 <div className="flex gap-2">
                                                     {daysNames.map((d, idx) => (
-                                                        <button 
-                                                            key={idx}
-                                                            onClick={() => toggleDay(s.id, idx)}
-                                                            className={`w-8 h-8 rounded-full text-xs font-bold transition ${s.days.includes(idx) ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-400'}`}
-                                                        >
-                                                            {d}
-                                                        </button>
+                                                        <button key={idx} onClick={() => toggleDay(s.id, idx)} className={`w-8 h-8 rounded-full text-xs font-bold transition ${s.days.includes(idx) ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-400'}`}>{d}</button>
                                                     ))}
                                                 </div>
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-4">
                                                 <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={s.active} 
-                                                        onChange={(e) => updateManualStatus(s.id, 'active', e.target.checked)}
-                                                        className="w-5 h-5 accent-green-500"
-                                                    />
+                                                    <input type="checkbox" checked={s.active} onChange={(e) => updateManualStatus(s.id, 'active', e.target.checked)} className="w-5 h-5 accent-green-500" />
                                                     <span>פעיל</span>
                                                 </label>
-                                                <input 
-                                                    value={s.text || ""}
-                                                    onChange={(e) => updateManualStatus(s.id, 'text', e.target.value)}
-                                                    placeholder="טקסט חופשי (למשל: תקין)"
-                                                    className="bg-gray-900 border border-gray-600 rounded px-2 py-1 flex-1"
-                                                />
+                                                <input value={s.text || ""} onChange={(e) => updateManualStatus(s.id, 'text', e.target.value)} placeholder="טקסט חופשי (למשל: תקין)" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 flex-1" />
                                             </div>
                                         )}
                                     </div>
@@ -978,39 +1098,31 @@
                             </div>
                         </section>
 
-                        {/* 3. הודעות */}
                         <section className="bg-gray-800 p-6 rounded-2xl">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold">הודעות רצות</h2>
-                                <button onClick={addMessage} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">
-                                    + הודעה חדשה
-                                </button>
+                             <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><i data-lucide="message-square" className="w-5 h-5"></i> הודעות ועד</h2>
+                                <button onClick={addMessage} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">+ הודעה</button>
                             </div>
                             <div className="space-y-4">
                                 {messages.map(m => (
-                                    <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group">
+                                    <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group items-start">
                                         <button onClick={() => removeMessage(m.id)} className="absolute top-2 left-2 text-red-400 bg-gray-900 p-1 rounded-full opacity-60 hover:opacity-100 z-10">
                                             <i data-lucide="trash-2" className="w-4 h-4"></i>
                                         </button>
-                                        <input 
-                                            value={m.title} 
-                                            onChange={(e) => updateMessage(m.id, 'title', e.target.value)}
-                                            className="bg-gray-900 border border-gray-600 rounded p-2 text-yellow-400 font-bold w-full md:w-1/4"
-                                            placeholder="כותרת"
-                                        />
-                                        <textarea 
-                                            value={m.content} 
-                                            onChange={(e) => updateMessage(m.id, 'content', e.target.value)}
-                                            className="bg-gray-900 border border-gray-600 rounded p-2 w-full"
-                                            rows="2"
-                                            placeholder="תוכן ההודעה"
-                                        />
+                                        <div className="w-full flex-1">
+                                            <input value={m.title} onChange={(e) => updateMessage(m.id, 'title', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 text-yellow-400 font-bold w-full mb-2 pl-10" placeholder="כותרת" />
+                                            <div className="relative">
+                                                <textarea value={m.content} onChange={(e) => updateMessage(m.id, 'content', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 w-full pl-10" rows="2" placeholder="תוכן ההודעה" />
+                                                <button onClick={() => handleAiRewrite(m.id, m.content)} className={`absolute bottom-2 left-2 p-1 rounded-full hover:bg-purple-600/50 text-purple-400 transition ${aiLoading === m.id ? 'animate-spin' : ''}`} title="שכתב עם AI">
+                                                    {aiLoading === m.id ? <i data-lucide="loader-2" className="w-5 h-5"></i> : <i data-lucide="sparkles" className="w-5 h-5"></i>}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </section>
 
-                        {/* 4. ניהול ברקודים (חדש!) */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <i data-lucide="qr-code" className="w-5 h-5"></i> ניהול ברקודים (QR)
@@ -1020,19 +1132,11 @@
                                     <div key={qr.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
                                         <div className="mb-2">
                                             <label className="text-xs text-gray-400 font-bold">כותרת</label>
-                                            <input 
-                                                value={qr.label}
-                                                onChange={(e) => updateQr(qr.id, 'label', e.target.value)}
-                                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-yellow-400 font-bold"
-                                            />
+                                            <input value={qr.label} onChange={(e) => updateQr(qr.id, 'label', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-yellow-400 font-bold" />
                                         </div>
                                         <div>
                                             <label className="text-xs text-gray-400 font-bold">קישור (URL)</label>
-                                            <input 
-                                                value={qr.link}
-                                                onChange={(e) => updateQr(qr.id, 'link', e.target.value)}
-                                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr"
-                                            />
+                                            <input value={qr.link} onChange={(e) => updateQr(qr.id, 'link', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr" />
                                         </div>
                                     </div>
                                 ))}
@@ -1043,10 +1147,7 @@
             );
         };
 
-        // ==========================================
-        // 🚀 אפליקציה ראשית
-        // ==========================================
-
+        // --- Main App ---
         const App = () => {
             const [view, setView] = useState('display'); 
             const [offline, setOffline] = useState(!navigator.onLine);
@@ -1054,26 +1155,38 @@
             
             const [settings, setSettings] = useData('settings', INITIAL_DATA.settings);
             const [messages, setMessages] = useData('messages', INITIAL_DATA.messages);
+            const [community, setCommunity] = useData('community', []);
+            const [events, setEvents] = useData('events', []);
             const [status, setStatus] = useData('status', INITIAL_DATA.status);
             const [slides, setSlides] = useData('slides', INITIAL_DATA.slides);
             const [qrCodes, setQrCodes] = useData('qrCodes', INITIAL_DATA.qrCodes);
 
+            // Pixel Shift Logic
+            const [shift, setShift] = useState({ x: 0, y: 0 });
             useEffect(() => {
-                if(window.lucide) lucide.createIcons();
-                
-                const handleHashChange = () => {
-                    const hash = window.location.hash;
-                    if (hash === '#admin') setView('admin');
-                    else if (hash === '#upload') setView('upload');
-                    else setView('display');
-                };
-                
-                window.addEventListener('hashchange', handleHashChange);
-                handleHashChange(); 
-
-                return () => window.removeEventListener('hashchange', handleHashChange);
+                const interval = setInterval(() => {
+                    setShift({
+                        x: Math.floor(Math.random() * 4) - 2, 
+                        y: Math.floor(Math.random() * 4) - 2
+                    });
+                }, 60000); 
+                return () => clearInterval(interval);
             }, []);
 
+            // Routing
+            useEffect(() => {
+                if(window.lucide) lucide.createIcons();
+                const handleHash = () => {
+                    const h = window.location.hash;
+                    if (h === '#admin') setView('admin');
+                    else if (h === '#upload') setView('upload');
+                    else setView('display');
+                };
+                window.addEventListener('hashchange', handleHash);
+                handleHash();
+                return () => window.removeEventListener('hashchange', handleHash);
+            }, []);
+            
             useEffect(() => {
                 // רענון יזום כל 15 דקות
                 const REFRESH_INTERVAL = 15 * 60 * 1000;
@@ -1094,49 +1207,40 @@
                 setStatus(newData.status);
                 setSlides(newData.slides);
                 setQrCodes(newData.qrCodes);
+                setCommunity(newData.community);
+                setEvents(newData.events);
             };
 
             const handleNewUpload = (updatedSlides) => {
                 setSlides(updatedSlides);
             };
 
-            if (view === 'admin') return <AdminView data={{settings, messages, status, slides, qrCodes}} onUpdate={handleDataUpdate} />;
-            if (view === 'upload') return <UploadView slides={slides} onUpload={handleNewUpload} />;
-
+            if (view === 'upload') return <UploadView slides={slides} community={community} onUploadSlides={setSlides} onUploadCommunity={setCommunity} />;
+            
+            if (view === 'admin') return <AdminView data={{settings, messages, status, slides, qrCodes, community, events}} onUpdate={handleDataUpdate} />;
+            
             return (
-                <div className={`h-screen w-screen text-white flex flex-col font-sans overflow-hidden ${night ? 'bg-black' : 'bg-[#111]'}`}>
-                    <BackgroundMusic 
-                        enabled={settings && settings.musicEnabled} 
-                        volume={(settings && settings.volume) || 0.15} 
-                        url={settings && settings.musicUrl}
-                    />
-                    <OfflineBanner show={offline || dbDisabled} />
-                    <RedAlertSystem />
+                <div 
+                    className="h-screen w-screen text-white flex flex-col font-sans overflow-hidden bg-[#111]"
+                    style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }} 
+                >
                     <TopHeader />
-
                     <div className="flex-1 flex gap-6 p-6 pb-24 overflow-hidden">
                         <div className="w-1/3 h-full">
-                            <CommitteeBoard messages={messages} qrCodes={qrCodes} />
+                            <CarouselBoard messages={messages} community={community} events={events} qrCodes={qrCodes} />
                         </div>
                         <div className="w-2/3 h-full flex flex-col gap-6">
-                            <div className="h-[65%]">
-                                <ImageSlideshow slides={slides} />
-                            </div>
-                            <div className="h-[35%]">
-                                <BuildingStatus items={status} />
-                            </div>
+                            <div className="h-[65%]"><ImageSlideshow slides={slides} /></div>
+                            <div className="h-[35%]"><BuildingStatus items={status} /></div>
                         </div>
                     </div>
-
-                    {!night && <NewsTicker />}
                     
-                    {/* כפתורי בקרה קבועים בתחתית */}
-                    <Controls 
-                        musicEnabled={settings && settings.musicEnabled} 
-                        toggleMusic={() => setSettings({...settings, musicEnabled: !(settings && settings.musicEnabled)})}
-                        // אם יש מוזיקה שמתנגנת בפועל, הרכיב למעלה ידע את זה, אבל כאן נסתמך על ההגדרה
-                        isPlaying={settings && settings.musicEnabled}
-                    />
+                    {!night && <NewsTicker />}
+                    <BackgroundMusic enabled={settings && settings.musicEnabled} volume={settings && settings.volume} url={settings && settings.musicUrl} />
+                    
+                    <div className="absolute bottom-0 left-0 w-24 h-12 z-50 opacity-0 hover:opacity-100 flex items-center justify-center gap-2 bg-black/50 transition-opacity rounded-tr-xl">
+                         <a href="#admin" className="text-white bg-gray-700 p-2 rounded-full"><i data-lucide="settings" className="w-4 h-4"></i></a>
+                    </div>
                 </div>
             );
         };
