@@ -1,4 +1,4 @@
-<!-- MASTER V3.1 - STABLE & CLEAN -->
+<!-- MASTER V3.0 - THEMES (DARK/LIGHT/AUTO) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lobby Dashboard - Park Malki</title>
     
-    <!-- ספריות בסיס (CDN יציב) -->
+    <!-- ספריות בסיס -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -20,19 +20,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Heebo', sans-serif; background-color: #111; color: white; margin: 0; padding: 0; overflow: hidden; }
-        .page-admin { height: 100vh; overflow-y: auto; background: #1a1a1a; }
+        body { font-family: 'Heebo', sans-serif; margin: 0; padding: 0; overflow: hidden; }
+        .page-admin { height: 100vh; overflow-y: auto; background: #1a1a1a; color: white; }
         @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(100%); } }
         @keyframes highlight-pulse { 0%, 100% { border-color: rgba(234, 179, 8, 0.5); background-color: rgba(234, 179, 8, 0.1); } 50% { border-color: rgba(234, 179, 8, 1); background-color: rgba(234, 179, 8, 0.2); } }
         .event-today { animation: highlight-pulse 2s infinite; border: 2px solid; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
-        
-        @media (max-width: 768px) {
-            .mobile-p-4 { padding: 1rem !important; }
-            .mobile-text-sm { font-size: 0.875rem !important; }
-        }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 100, 100, 0.2); border-radius: 10px; }
     </style>
 </head>
 <body>
@@ -42,10 +37,9 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // 1. עזרים ואייקונים
+        // 1. פונקציות עזר ורכיבים בסיסיים
         // ==========================================
         
-        // רכיב אייקון בטוח
         const SafeLucide = ({ name, className }) => {
             const ref = useRef(null);
             useEffect(() => {
@@ -66,7 +60,7 @@
 
         function isNightTime() {
             const h = new Date().getHours();
-            return h >= 23 || h < 6;
+            return h >= 18 || h < 6; // לילה מ-18:00 עד 06:00
         }
 
         function getDayName(dateStr) {
@@ -128,7 +122,8 @@
                 musicEnabled: true, 
                 volume: 0.15,
                 musicUrl: DEFAULT_MUSIC_URL,
-                geminiKey: "" 
+                geminiKey: "",
+                theme: "dark" // 'dark' | 'light' | 'auto'
             },
             messages: [
                 { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." },
@@ -157,13 +152,15 @@
             ]
         };
 
-        // --- Data Logic ---
+        // --- Data Management ---
         let db = null;
         let dbDisabled = false;
 
         try {
             if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
-                if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
                 db = firebase.firestore();
             }
         } catch (e) {
@@ -172,11 +169,14 @@
 
         const useData = (collectionName, initialValue) => {
             const STORAGE_KEY = collectionName; 
+
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
                     return cached ? JSON.parse(cached) : initialValue;
-                } catch (e) { return initialValue; }
+                } catch (e) {
+                    return initialValue;
+                }
             });
             
             useEffect(() => {
@@ -195,7 +195,9 @@
                             } else {
                                 db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue }).catch(e => {});
                             }
-                        }, error => { dbDisabled = true; });
+                        }, error => {
+                            dbDisabled = true;
+                        });
                     } catch (e) { dbDisabled = true; }
                 }
                 return () => unsubscribe();
@@ -212,10 +214,11 @@
                     });
                 }
             };
+
             return [data, updateData];
         };
 
-        // --- Helpers ---
+        // --- Fetch Hebrew Holidays ---
         const useHebrewCalendar = () => {
             const [holidays, setHolidays] = useState([]);
             useEffect(() => {
@@ -237,13 +240,14 @@
                                 setHolidays(upcoming.slice(0, 3));
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { console.log("Calendar fetch failed"); }
                 };
                 fetchHolidays();
             }, []);
             return holidays;
         };
 
+        // --- Gemini AI ---
         const generateGeminiText = async (prompt, key) => {
             if (!key) return null;
             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
@@ -263,9 +267,7 @@
             } catch (error) { return null; }
         };
 
-        // ==========================================
-        // 3. רכיבי ממשק
-        // ==========================================
+        // --- 3. COMPONENTS ---
 
         const OfflineBanner = ({ show }) => {
             if (!show) return null;
@@ -372,9 +374,10 @@
             );
         };
 
-        const TopHeader = () => {
+        const TopHeader = ({ isDark }) => {
             const [time, setTime] = useState(new Date());
             const [weather, setWeather] = useState(null);
+            
             useEffect(() => {
                 const timer = setInterval(() => setTime(new Date()), 1000);
                 const fetchWeather = async () => {
@@ -390,39 +393,47 @@
                 return () => { clearInterval(timer); clearInterval(wTimer); };
             }, []);
 
+            const bgClass = isDark ? "bg-[#1a1a1a]" : "bg-white shadow-md border-gray-200";
+            const textClass = isDark ? "text-white" : "text-gray-900";
+            const subTextClass = isDark ? "text-gray-400" : "text-gray-500";
+            const cardClass = isDark ? "bg-gray-800/40 border-gray-700/50" : "bg-white border-gray-200 shadow-sm";
+
             return (
-                <div className="h-32 bg-[#1a1a1a] flex items-center justify-between px-8 border-b-4 border-gray-800 shadow-2xl relative z-20">
+                <div className={`h-32 ${bgClass} flex items-center justify-between px-8 border-b-4 ${isDark ? 'border-gray-800' : 'border-blue-500'} relative z-20 transition-colors duration-500`}>
                     <div className="flex items-center gap-6 w-1/4">
-                        <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-sm shadow-inner">
+                        <div className={`${isDark ? 'bg-white/10' : 'bg-gray-100'} p-3 rounded-2xl backdrop-blur-sm shadow-inner`}>
                             <img src={BUILDING_LOGO_URL} alt="Logo" className="w-full h-16 object-contain" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-black text-white tracking-wide leading-tight">{BUILDING_NAME}</h1>
-                            <h2 className="text-xl text-gray-400 mt-1 font-light">{BUILDING_ADDRESS}</h2>
+                            <h1 className={`text-3xl font-black tracking-wide leading-tight ${textClass}`}>{BUILDING_NAME}</h1>
+                            <h2 className={`text-xl font-light ${subTextClass}`}>{BUILDING_ADDRESS}</h2>
                         </div>
                     </div>
                     <div className="flex-1 flex justify-center h-full py-2">
                         {weather && weather.current_weather ? (
-                            <div className="flex items-center gap-8 bg-gray-800/40 px-10 rounded-2xl border border-gray-700/50 shadow-lg w-full max-w-6xl justify-between">
+                            <div className={`flex items-center gap-8 px-10 rounded-2xl border ${cardClass} w-full max-w-6xl justify-between transition-colors duration-500`}>
                                 <div className="flex items-center gap-4">
                                     <div className="w-16 h-16 transform scale-125">
                                         <WeatherIcon code={weather.current_weather.weathercode} />
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-5xl font-bold text-yellow-400">{Math.round(weather.current_weather.temperature)}°</span>
-                                        <span className="text-lg text-gray-400 font-light">ראשון לציון</span>
+                                        <span className="text-5xl font-bold text-yellow-500">{Math.round(weather.current_weather.temperature)}°</span>
+                                        <span className={`text-lg font-light ${subTextClass}`}>ראשון לציון</span>
                                     </div>
                                 </div>
-                                <div className="h-16 w-px bg-gray-600"></div>
+                                <div className={`h-16 w-px ${isDark ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
                                 <div className="flex gap-4">
                                     {[0, 1, 2, 3, 4, 5, 6].map(i => (
                                         <div key={i} className="flex flex-col items-center gap-1 min-w-[3.5rem]">
-                                            <span className="text-sm font-bold text-gray-300">{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
+                                            <span className={`text-sm font-bold ${subTextClass}`}>{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
+                                            
                                             <div className="w-8 h-8">
                                                 <WeatherIcon code={weather.daily.weathercode ? weather.daily.weathercode[i] : undefined} />
                                             </div>
-                                            <div className="text-sm font-mono"><span className="font-bold text-white">{weather.daily.temperature_2m_max && weather.daily.temperature_2m_max[i] ? Math.round(weather.daily.temperature_2m_max[i]) : '-'}°</span></div>
-                                            <span className="text-xs text-gray-400 font-mono mt-1">
+                                            
+                                            <div className="text-sm font-mono"><span className={`font-bold ${textClass}`}>{weather.daily.temperature_2m_max && weather.daily.temperature_2m_max[i] ? Math.round(weather.daily.temperature_2m_max[i]) : '-'}°</span></div>
+                                            
+                                            <span className={`text-xs font-mono mt-1 ${subTextClass}`}>
                                                 {weather.daily.time && weather.daily.time[i] ? getDateShort(weather.daily.time[i]) : ''}
                                             </span>
                                         </div>
@@ -432,8 +443,8 @@
                         ) : <div className="text-xl animate-pulse text-gray-400">טוען נתונים...</div>}
                     </div>
                     <div className="flex flex-col items-end justify-center w-1/4">
-                        <div className="text-6xl font-mono font-bold text-white tracking-widest leading-none mb-1">{time.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}</div>
-                        <div className="text-xl text-yellow-500 font-medium tracking-wide bg-black/30 px-3 py-1 rounded-lg border border-white/10">{time.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jerusalem' })}</div>
+                        <div className={`text-6xl font-mono font-bold tracking-widest leading-none mb-1 ${textClass}`}>{time.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}</div>
+                        <div className={`text-xl text-yellow-600 font-medium tracking-wide px-3 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-gray-100 border-gray-200'}`}>{time.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jerusalem' })}</div>
                     </div>
                 </div>
             );
@@ -544,7 +555,7 @@
             );
         };
 
-        const ImageSlideshow = ({ slides }) => {
+        const ImageSlideshow = ({ slides, isDark }) => {
             const [currentSlide, setCurrentSlide] = useState(0);
             const approvedSlides = slides.filter(s => s.status === 'approved');
             
@@ -556,13 +567,13 @@
                 return () => clearInterval(interval);
             }, [approvedSlides.length]);
 
-            if (approvedSlides.length === 0) return <div className="w-full h-full bg-gray-800 rounded-3xl flex items-center justify-center">אין תמונות להצגה</div>;
+            if (approvedSlides.length === 0) return <div className={`w-full h-full rounded-3xl flex items-center justify-center ${isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-200 text-gray-400'}`}>אין תמונות להצגה</div>;
 
             return (
-                <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 bg-black group">
+                <div className={`relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 ${isDark ? 'border-gray-800 bg-black' : 'border-gray-200 bg-white'} group`}>
                     {approvedSlides.map((slide, index) => (
                         <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
-                            <img src={slide.url} className="w-full h-full object-contain bg-black" />
+                            <img src={slide.url} className={`w-full h-full object-contain ${isDark ? 'bg-black' : 'bg-white'}`} />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
                         </div>
                     ))}
@@ -570,7 +581,7 @@
             );
         };
 
-        const CarouselBoard = ({ messages, community, events, qrCodes }) => {
+        const CarouselBoard = ({ messages, community, events, qrCodes, isDark }) => {
             const [tab, setTab] = useState(0); 
             const holidays = useHebrewCalendar();
 
@@ -595,47 +606,52 @@
                 return dateStr.startsWith(today);
             };
 
+            const bgClass = isDark ? "bg-gray-900/95 border-gray-700" : "bg-white/95 border-gray-200";
+            const textClass = isDark ? "text-white" : "text-gray-900";
+            const subTextClass = isDark ? "text-gray-400" : "text-gray-600";
+            const cardBgClass = isDark ? "bg-gray-800/60" : "bg-gray-50";
+
             return (
-                <div className="bg-gray-900/95 rounded-3xl p-6 h-full border border-gray-700 flex flex-col shadow-xl backdrop-blur-sm relative transition-all duration-500">
-                    <div className="flex items-center gap-3 mb-4 border-b border-gray-700 pb-4 shrink-0 h-16">
-                        {tab === 0 && <React.Fragment><div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div><h2 className="text-2xl font-bold text-white">הודעות ועד הבית</h2></React.Fragment>}
-                        {tab === 1 && <React.Fragment><SafeLucide name="hand-heart" className="w-8 h-8 text-pink-500" /><h2 className="text-2xl font-bold text-white">לוח קהילה</h2></React.Fragment>}
-                        {tab === 2 && <React.Fragment><SafeLucide name="calendar" className="w-8 h-8 text-blue-500" /><h2 className="text-2xl font-bold text-white">אירועים קרובים</h2></React.Fragment>}
+                <div className={`${bgClass} rounded-3xl p-6 h-full border flex flex-col shadow-xl backdrop-blur-sm relative transition-all duration-500`}>
+                    <div className={`flex items-center gap-3 mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} pb-4 shrink-0 h-16`}>
+                        {tab === 0 && <React.Fragment><div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div><h2 className={`text-2xl font-bold ${textClass}`}>הודעות ועד הבית</h2></React.Fragment>}
+                        {tab === 1 && <React.Fragment><SafeLucide name="hand-heart" className="w-8 h-8 text-pink-500" /><h2 className={`text-2xl font-bold ${textClass}`}>לוח קהילה</h2></React.Fragment>}
+                        {tab === 2 && <React.Fragment><SafeLucide name="calendar" className="w-8 h-8 text-blue-500" /><h2 className={`text-2xl font-bold ${textClass}`}>אירועים קרובים</h2></React.Fragment>}
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                         {tab === 0 && messages.map((msg) => (
-                            <div key={msg.id} className="bg-gray-800/60 p-4 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500">
-                                <h3 className="text-lg font-bold text-yellow-400 mb-1">{msg.title}</h3>
-                                <p className="text-gray-300 text-base leading-relaxed">{msg.content}</p>
+                            <div key={msg.id} className={`${cardBgClass} p-4 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500`}>
+                                <h3 className="text-lg font-bold text-yellow-600 mb-1">{msg.title}</h3>
+                                <p className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-base leading-relaxed`}>{msg.content}</p>
                             </div>
                         ))}
 
                         {tab === 1 && approvedCommunity.map((item) => (
-                            <div key={item.id} className={`bg-gray-800/60 p-4 rounded-xl border-r-4 mb-3 animate-in fade-in slide-in-from-right-4 duration-500 ${item.type === 'give' ? 'border-green-500' : 'border-purple-500'}`}>
+                            <div key={item.id} className={`${cardBgClass} p-4 rounded-xl border-r-4 mb-3 animate-in fade-in slide-in-from-right-4 duration-500 ${item.type === 'give' ? 'border-green-500' : 'border-purple-500'}`}>
                                 <div className="flex justify-between">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${item.type === 'give' ? 'bg-green-900 text-green-300' : 'bg-purple-900 text-purple-300'}`}>
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${item.type === 'give' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
                                         {item.type === 'give' ? 'למסירה' : 'אבידה/מציאה'}
                                     </span>
-                                    <span className="text-xs text-gray-500">{item.date}</span>
+                                    <span className={`text-xs ${subTextClass}`}>{item.date}</span>
                                 </div>
-                                <h3 className="text-lg font-bold text-white mt-1">{item.content}</h3>
-                                <p className="text-gray-400 text-sm mt-1">{item.contact}</p>
+                                <h3 className={`text-lg font-bold ${textClass} mt-1`}>{item.content}</h3>
+                                <p className={`${subTextClass} text-sm mt-1`}>{item.contact}</p>
                             </div>
                         ))}
 
                         {tab === 2 && (
                             <div className="space-y-3">
-                                {allEvents.length === 0 && <div className="text-center text-gray-500 mt-10">אין אירועים קרובים</div>}
+                                {allEvents.length === 0 && <div className={`text-center ${subTextClass} mt-10`}>אין אירועים קרובים</div>}
                                 {allEvents.map((evt) => (
-                                    <div key={evt.id} className={`flex items-center gap-4 bg-gray-800/60 p-3 rounded-xl border border-gray-700 animate-in fade-in slide-in-from-right-4 duration-500 ${isEventToday(evt.date) ? 'event-today' : ''}`}>
-                                        <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg ${evt.type === 'holiday' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-700 text-white'}`}>
+                                    <div key={evt.id} className={`flex items-center gap-4 ${cardBgClass} p-3 rounded-xl border ${isDark ? 'border-gray-700' : 'border-gray-200'} animate-in fade-in slide-in-from-right-4 duration-500 ${isEventToday(evt.date) ? 'event-today' : ''}`}>
+                                        <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg ${evt.type === 'holiday' ? 'bg-blue-100 text-blue-600' : (isDark ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800')}`}>
                                             <span className="text-xl font-bold leading-none">{new Date(evt.date).getDate()}</span>
                                             <span className="text-[10px]">{new Date(evt.date).toLocaleDateString('he-IL', { month: 'short' })}</span>
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-lg">{evt.title}</h3>
-                                            <p className="text-xs text-gray-400">{evt.type === 'holiday' ? 'חג/מועד' : 'אירוע בניין'}</p>
+                                            <h3 className={`font-bold text-lg ${textClass}`}>{evt.title}</h3>
+                                            <p className={`text-xs ${subTextClass}`}>{evt.type === 'holiday' ? 'חג/מועד' : 'אירוע בניין'}</p>
                                         </div>
                                         {isEventToday(evt.date) && <span className="mr-auto bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full animate-pulse">היום!</span>}
                                     </div>
@@ -644,7 +660,7 @@
                         )}
                     </div>
 
-                    <div className="mt-auto pt-4 border-t border-gray-700">
+                    <div className={`mt-auto pt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                         <div className="flex justify-between gap-2">
                             {qrCodes.map((qr) => (
                                 <div key={qr.id} className="bg-white p-1.5 rounded-lg flex flex-col items-center gap-1 shadow-lg w-1/4">
@@ -658,9 +674,9 @@
             );
         };
 
-        const BuildingStatus = ({ items }) => {
+        const BuildingStatus = ({ items, isDark }) => {
             const [isOnline, setIsOnline] = useState(navigator.onLine);
-            const currentDay = new Date().getDay(); // 0 = Sunday
+            const currentDay = new Date().getDay(); 
 
             useEffect(() => {
                 const handleStatus = () => setIsOnline(navigator.onLine);
@@ -680,7 +696,7 @@
                         isActive: isOnline,
                         label: item.label,
                         statusText: isOnline ? "מחובר" : "מנותק",
-                        colorClass: isOnline ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                        colorClass: isOnline ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
                     };
                 }
                 
@@ -696,7 +712,7 @@
                         isActive: isToday,
                         label: item.label,
                         statusText: text,
-                        colorClass: isToday ? "bg-green-500/20 text-green-400" : "bg-gray-700 text-gray-500"
+                        colorClass: isToday ? "bg-green-100 text-green-600" : (isDark ? "bg-gray-700 text-gray-500" : "bg-gray-200 text-gray-500")
                     };
                 }
                 
@@ -704,26 +720,30 @@
                     isActive: item.active,
                     label: item.label,
                     statusText: item.text || (item.active ? "תקין" : "בטיפול"),
-                    colorClass: item.active ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"
+                    colorClass: item.active ? "bg-green-100 text-green-600" : "bg-orange-100 text-orange-600"
                 };
             };
 
+            const bgClass = isDark ? "bg-gray-800/90 border-gray-700" : "bg-white/90 border-gray-200 shadow-xl";
+            const textClass = isDark ? "text-white" : "text-gray-900";
+            const subTextClass = isDark ? "text-gray-200" : "text-gray-600";
+
             return (
-                <div className="bg-gray-800/90 rounded-3xl p-6 h-full border border-gray-700 flex flex-col shadow-xl">
-                    <div className="flex items-center gap-3 mb-4 border-b border-gray-700 pb-2">
-                        <i data-lucide="info" className="text-blue-400 w-6 h-6"></i>
-                        <h2 className="text-xl font-bold text-white">היום בבניין</h2>
+                <div className={`${bgClass} rounded-3xl p-6 h-full border flex flex-col transition-colors duration-500`}>
+                    <div className={`flex items-center gap-3 mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} pb-2`}>
+                        <i data-lucide="info" className="text-blue-500 w-6 h-6"></i>
+                        <h2 className={`text-xl font-bold ${textClass}`}>היום בבניין</h2>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 h-full content-center">
                         {items.map((item) => {
                             const display = getStatusDisplay(item);
                             return (
-                                <div key={item.id} className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${display.isActive ? 'bg-gray-700/50 border-green-500/30' : 'bg-gray-800/30 border-gray-700'} text-center transition-all`}>
+                                <div key={item.id} className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${display.isActive ? (isDark ? 'bg-gray-700/50 border-green-500/30' : 'bg-green-50 border-green-200') : (isDark ? 'bg-gray-800/30 border-gray-700' : 'bg-white border-gray-100')} text-center transition-all`}>
                                     <div className={`p-2 rounded-full mb-2 ${display.colorClass}`}>
                                         <SafeLucide name={item.icon} className="w-6 h-6" />
                                     </div>
-                                    <span className="text-sm font-bold text-gray-200 mb-1">{display.label}</span>
-                                    <span className={`text-xs ${display.isActive ? 'text-green-300' : 'text-gray-500'}`}>{display.statusText}</span>
+                                    <span className={`text-sm font-bold ${subTextClass} mb-1`}>{display.label}</span>
+                                    <span className={`text-xs ${display.isActive ? 'text-green-600 font-bold' : 'text-gray-500'}`}>{display.statusText}</span>
                                 </div>
                             );
                         })}
@@ -731,10 +751,6 @@
                 </div>
             );
         };
-
-        // ==========================================
-        // 🔐 ממשקי ניהול
-        // ==========================================
 
         const UploadView = ({ slides, community, onUploadSlides, onUploadCommunity }) => {
             const [tab, setTab] = useState('image'); // 'image' or 'community'
@@ -781,131 +797,35 @@
             };
 
             return (
-                <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center justify-center font-sans">
-                    {/* כפתור חזור */}
-                    <a href="#" onClick={(e) => { e.preventDefault(); window.location.href = window.location.pathname; }} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition z-10 shadow-lg">
-                         <SafeLucide name="arrow-right" className="w-6 h-6 text-white" />
-                    </a>
+                <div className="min-h-screen bg-gray-900 text-white p-6 flex flex-col items-center justify-center font-sans">
+                    <a href="#" className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full"><SafeLucide name="arrow-right" className="w-6 h-6" /></a>
+                    <div className="bg-gray-800 p-6 rounded-2xl w-full max-w-md border border-gray-700">
+                        <div className="flex bg-gray-700 p-1 rounded-lg mb-6">
+                            <button onClick={() => setTab('image')} className={`flex-1 py-2 rounded-md text-sm font-bold transition ${tab === 'image' ? 'bg-gray-600 text-white shadow' : 'text-gray-400'}`}>תמונה למסך</button>
+                            <button onClick={() => setTab('community')} className={`flex-1 py-2 rounded-md text-sm font-bold transition ${tab === 'community' ? 'bg-gray-600 text-white shadow' : 'text-gray-400'}`}>מודעת קהילה</button>
+                        </div>
 
-                    <div className="w-full max-w-md space-y-6">
-                        {/* כותרת ולוגו */}
-                        <div className="text-center">
-                            <div className="relative inline-block">
-                                <img src={BUILDING_LOGO_URL} className="w-24 h-24 mx-auto rounded-full bg-white p-2 object-contain shadow-2xl border-4 border-gray-800" />
-                                <div className="absolute bottom-0 right-0 bg-green-500 rounded-full p-1.5 border-2 border-gray-900">
-                                    <SafeLucide name="check" className="w-4 h-4 text-white" />
+                        {message && <div className="bg-green-500/20 text-green-300 p-3 rounded-lg text-center mb-4">{message}</div>}
+
+                        {tab === 'image' ? (
+                            <form onSubmit={handleSubmitImage} className="space-y-4">
+                                <div className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center relative">
+                                    <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full" required />
+                                    {file ? <div className="text-green-400">{file.name}</div> : <div className="text-gray-400">לחץ לבחירת תמונה</div>}
                                 </div>
-                            </div>
-                            <h1 className="text-3xl font-bold mt-4 text-white tracking-wide">{BUILDING_NAME}</h1>
-                            <p className="text-gray-400 text-sm mt-1">מערכת שיתוף דיירים</p>
-                        </div>
-
-                        <div className="bg-gray-800 p-6 rounded-3xl shadow-2xl border border-gray-700 relative overflow-hidden">
-                            {/* Tabs מעוצבים */}
-                            <div className="flex bg-gray-900/50 p-1.5 rounded-xl mb-6 relative">
-                                <button 
-                                    onClick={() => setTab('image')} 
-                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'image' ? 'bg-blue-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}
-                                >
-                                    <SafeLucide name="image" className="w-4 h-4" /> תמונה למסך
-                                </button>
-                                <button 
-                                    onClick={() => setTab('community')} 
-                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'community' ? 'bg-purple-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}
-                                >
-                                    <SafeLucide name="message-circle" className="w-4 h-4" /> לוח קהילה
-                                </button>
-                            </div>
-
-                            {message && (
-                                <div className="bg-green-500/20 border border-green-500/50 text-green-300 p-4 rounded-xl text-center mb-6 animate-pulse flex items-center justify-center gap-2">
-                                    <SafeLucide name="check-circle" className="w-5 h-5" />
-                                    <span className="font-bold">{message}</span>
-                                </div>
-                            )}
-
-                            {tab === 'image' ? (
-                                <form onSubmit={handleSubmitImage} className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="border-2 border-dashed border-gray-600 hover:border-blue-500 hover:bg-gray-700/30 rounded-2xl p-8 text-center relative transition-all group cursor-pointer">
-                                        <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full z-10 cursor-pointer" required />
-                                        
-                                        {file ? (
-                                            <div className="flex flex-col items-center">
-                                                <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition">
-                                                    <SafeLucide name="check" className="w-8 h-8" />
-                                                </div>
-                                                <span className="text-white font-bold text-lg truncate w-full px-2">{file.name}</span>
-                                                <span className="text-xs text-gray-400 mt-1">לחץ להחלפה</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col items-center">
-                                                <div className="w-16 h-16 bg-gray-700 text-gray-400 rounded-full flex items-center justify-center mb-3 group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
-                                                    <SafeLucide name="upload-cloud" className="w-8 h-8" />
-                                                </div>
-                                                <span className="text-gray-300 font-bold">לחצו לבחירת תמונה</span>
-                                                <span className="text-xs text-gray-500 mt-1">מקסימום 5MB</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button disabled={loading} className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2">
-                                        {loading ? <SafeLucide name="loader-2" className="w-5 h-5 animate-spin" /> : <SafeLucide name="send" className="w-5 h-5" />}
-                                        {loading ? "מעלה..." : "שלח לאישור"}
-                                    </button>
-                                </form>
-                            ) : (
-                                <form onSubmit={handleSubmitCommunity} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-gray-400 mr-1">סוג המודעה</label>
-                                        <div className="relative">
-                                            <select value={textData.type} onChange={e => setTextData({...textData, type: e.target.value})} className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white appearance-none focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none">
-                                                <option value="give">🎁 למסירה (חפצים/ריהוט)</option>
-                                                <option value="lost">🔍 אבידות ומציאות</option>
-                                            </select>
-                                            <div className="absolute left-3 top-3.5 text-gray-400 pointer-events-none">
-                                                <SafeLucide name="chevron-down" className="w-5 h-5" />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-gray-400 mr-1">תוכן המודעה</label>
-                                        <textarea 
-                                            value={textData.content} 
-                                            onChange={e => setTextData({...textData, content: e.target.value})} 
-                                            placeholder="לדוגמה: למסירה שולחן סלון במצב מצוין..." 
-                                            className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none" 
-                                            rows="3" 
-                                            required 
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-gray-400 mr-1">פרטי קשר (יופיעו על המסך)</label>
-                                        <div className="relative">
-                                            <input 
-                                                value={textData.contact} 
-                                                onChange={e => setTextData({...textData, contact: e.target.value})} 
-                                                placeholder="שם וטלפון / מספר דירה" 
-                                                className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none" 
-                                                required 
-                                            />
-                                            <div className="absolute left-3 top-3 text-gray-500">
-                                                <SafeLucide name="phone" className="w-5 h-5" />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <button className="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
-                                        <SafeLucide name="send" className="w-5 h-5" />
-                                        פרסם מודעה
-                                    </button>
-                                </form>
-                            )}
-                        </div>
-                        
-                        <div className="text-center text-xs text-gray-500 mt-8">
-                            © {new Date().getFullYear()} {BUILDING_NAME}
-                        </div>
+                                <button disabled={loading} className="w-full bg-blue-600 py-3 rounded-xl font-bold">{loading ? "שולח..." : "שלח תמונה"}</button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleSubmitCommunity} className="space-y-4">
+                                <select value={textData.type} onChange={e => setTextData({...textData, type: e.target.value})} className="w-full bg-gray-900 border border-gray-600 rounded p-3">
+                                    <option value="give">למסירה (חפצים/ריהוט)</option>
+                                    <option value="lost">אבידות ומציאות</option>
+                                </select>
+                                <textarea value={textData.content} onChange={e => setTextData({...textData, content: e.target.value})} placeholder="מה למסירה / מה נמצא?" className="w-full bg-gray-900 border border-gray-600 rounded p-3" rows="3" required />
+                                <input value={textData.contact} onChange={e => setTextData({...textData, contact: e.target.value})} placeholder="פרטים ליצירת קשר (טלפון/דירה)" className="w-full bg-gray-900 border border-gray-600 rounded p-3" required />
+                                <button className="w-full bg-purple-600 py-3 rounded-xl font-bold">פרסם מודעה</button>
+                            </form>
+                        )}
                     </div>
                 </div>
             );
@@ -1013,6 +933,7 @@
                 alert("הנתונים נשמרו בהצלחה!");
             };
             
+             // Back button logic using clean URL reset
             const handleBack = (e) => {
                 e.preventDefault();
                 window.location.href = window.location.pathname; 
@@ -1065,12 +986,26 @@
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
-                        {/* הגדרות */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <SafeLucide name="settings" className="w-5 h-5" /> הגדרות מערכת
                             </h2>
                             <div className="grid gap-4">
+                                <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold">ערכת נושא</span>
+                                        <span className="text-xs text-gray-400">בחר את מראה המסך</span>
+                                    </div>
+                                    <select 
+                                        value={settings.theme || 'dark'}
+                                        onChange={(e) => updateSettings('theme', e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    >
+                                        <option value="dark">כהה (מומלץ)</option>
+                                        <option value="light">בהיר</option>
+                                        <option value="auto">אוטומטי (בהיר ביום, כהה בלילה)</option>
+                                    </select>
+                                </div>
                                 <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
                                     <span className="font-bold">מוזיקת רקע</span>
                                     <button 
@@ -1114,7 +1049,6 @@
                             </div>
                         </section>
 
-                        {/* אישור קהילה ותמונות */}
                         {(pendingSlides.length > 0 || pendingCommunity.length > 0) && (
                             <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-yellow-400">
@@ -1148,7 +1082,6 @@
                             </section>
                         )}
                         
-                        {/* תמונות באוויר */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <SafeLucide name="image" className="w-5 h-5" /> תמונות באוויר (פעילות)
@@ -1162,30 +1095,6 @@
                                         </div>
                                     </div>
                                 ))}
-                            </div>
-                        </section>
-
-                        {/* מודעות קהילה פעילות */}
-                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
-                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                <SafeLucide name="hand-heart" className="w-5 h-5" /> מודעות קהילה פעילות
-                            </h2>
-                            <div className="space-y-3">
-                                {approvedCommunity.map(c => (
-                                    <div key={c.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
-                                        <div>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 ${c.type === 'give' ? 'bg-green-900 text-green-300' : 'bg-purple-900 text-purple-300'}`}>
-                                                {c.type === 'give' ? 'למסירה' : 'אבידה'}
-                                            </span>
-                                            <span className="font-bold">{c.content}</span>
-                                            <span className="text-gray-400 text-xs mr-2">({c.contact})</span>
-                                        </div>
-                                        <button onClick={() => deleteCommunity(c.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
-                                    </div>
-                                ))}
-                                {approvedCommunity.length === 0 && (
-                                    <p className="text-gray-500 text-sm">אין מודעות קהילה פעילות כרגע.</p>
-                                )}
                             </div>
                         </section>
                         
@@ -1299,7 +1208,23 @@
             const [slides, setSlides] = useData('slides', INITIAL_DATA.slides);
             const [qrCodes, setQrCodes] = useData('qrCodes', INITIAL_DATA.qrCodes);
 
-            // Pixel Shift
+            // Theme Logic
+            const [isDark, setIsDark] = useState(true);
+            useEffect(() => {
+                const checkTheme = () => {
+                    const theme = settings.theme || 'dark';
+                    if (theme === 'auto') {
+                        setIsDark(isNightTime());
+                    } else {
+                        setIsDark(theme === 'dark');
+                    }
+                };
+                checkTheme();
+                const interval = setInterval(checkTheme, 60000); // Check every minute for auto change
+                return () => clearInterval(interval);
+            }, [settings.theme]);
+
+            // Pixel Shift Logic
             const [shift, setShift] = useState({ x: 0, y: 0 });
             useEffect(() => {
                 const interval = setInterval(() => {
@@ -1349,17 +1274,17 @@
             
             return (
                 <div 
-                    className="h-screen w-screen text-white flex flex-col font-sans overflow-hidden bg-[#111]"
+                    className={`h-screen w-screen flex flex-col font-sans overflow-hidden transition-colors duration-500 ${isDark ? 'bg-[#111] text-white' : 'bg-gray-100 text-gray-900'}`}
                     style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }} 
                 >
-                    <TopHeader />
+                    <TopHeader isDark={isDark} />
                     <div className="flex-1 flex gap-6 p-6 pb-24 overflow-hidden">
                         <div className="w-1/3 h-full">
-                            <CarouselBoard messages={messages} community={community} events={events} qrCodes={qrCodes} />
+                            <CarouselBoard messages={messages} community={community} events={events} qrCodes={qrCodes} isDark={isDark} />
                         </div>
                         <div className="w-2/3 h-full flex flex-col gap-6">
-                            <div className="h-[65%]"><ImageSlideshow slides={slides} /></div>
-                            <div className="h-[35%]"><BuildingStatus items={status} /></div>
+                            <div className="h-[65%]"><ImageSlideshow slides={slides} isDark={isDark} /></div>
+                            <div className="h-[35%]"><BuildingStatus items={status} isDark={isDark} /></div>
                         </div>
                     </div>
                     
@@ -1373,16 +1298,8 @@
             );
         };
 
-        // הוספתי בדיקה ש-React מוכן לפני הריצה
-        window.addEventListener('load', () => {
-            if (typeof ReactDOM !== 'undefined') {
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(<App />);
-            } else {
-                console.error("ReactDOM failed to load");
-                document.getElementById('root').innerHTML = '<div style="color:white; text-align:center; padding: 20px;">שגיאה בטעינת המערכת (CDN). נא לרענן.</div>';
-            }
-        });
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
