@@ -1,4 +1,4 @@
-<!-- MASTER V3.1 - STABLE & ENHANCED UI -->
+<!-- MASTER V3.2 - DATA SAFETY FIX (READ ONLY DEFAULT) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -60,7 +60,7 @@
 
         function isNightTime() {
             const h = new Date().getHours();
-            return h >= 18 || h < 6; // לילה מ-18:00 עד 06:00
+            return h >= 18 || h < 6;
         }
 
         function getDayName(dateStr) {
@@ -131,8 +131,6 @@
                 { id: 3, title: "חברת ניהול", content: "מוקד חירום 24/7 בטלפון *1234" },
                 { id: 4, title: "אינטרנט בחניון", content: "רשת WiFi זמינה בחניון מינוס 2. סיסמה: 12345678" }
             ],
-            community: [], 
-            events: [], 
             status: [
                 { id: 1, label: "ניקיון", icon: "sparkles", type: "schedule", days: [0, 2, 4] },
                 { id: 2, label: "גנן", icon: "flower-2", type: "schedule", days: [2] },
@@ -169,8 +167,7 @@
         }
 
         const useData = (collectionName, initialValue) => {
-            const STORAGE_KEY = collectionName; 
-
+            const STORAGE_KEY = collectionName; // שמות נקיים
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
@@ -187,6 +184,7 @@
                         unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
                                 const remoteData = doc.data().items;
+                                // מיזוג חכם
                                 if (!Array.isArray(remoteData) && typeof remoteData === 'object') {
                                      setData({ ...initialValue, ...remoteData });
                                 } else {
@@ -194,9 +192,12 @@
                                 }
                                 localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
                             } else {
-                                db.collection('appData').doc(STORAGE_KEY).set({ items: initialValue }).catch(e => {});
+                                // תיקון קריטי: לא דורסים נתונים באופן אוטומטי!
+                                // רק קוראים. אם אין נתונים - משתמשים בברירת מחדל מקומית בלבד.
+                                console.log(`No data found for ${STORAGE_KEY}, using local defaults.`);
                             }
                         }, error => {
+                            console.warn("Firestore offline mode");
                             dbDisabled = true;
                         });
                     } catch (e) { dbDisabled = true; }
@@ -207,15 +208,16 @@
             const updateData = (newData) => {
                 setData(newData);
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+                // שמירה לענן רק בפעולה יזומה
                 if (db && !dbDisabled) {
                     db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
+                        console.warn("Cloud save failed:", err.code);
                         if (err.code === 'permission-denied') {
-                            alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
+                            alert("שגיאה: אין הרשאת כתיבה לענן.");
                         }
                     });
                 }
             };
-
             return [data, updateData];
         };
 
@@ -754,7 +756,7 @@
         };
 
         const UploadView = ({ slides, community, onUploadSlides, onUploadCommunity }) => {
-            const [tab, setTab] = useState('image'); 
+            const [tab, setTab] = useState('image'); // 'image' or 'community'
             const [file, setFile] = useState(null);
             const [textData, setTextData] = useState({ type: 'give', content: '', contact: '' });
             const [loading, setLoading] = useState(false);
@@ -799,11 +801,13 @@
 
             return (
                 <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center justify-center font-sans">
+                    {/* כפתור חזור */}
                     <a href="#" onClick={(e) => { e.preventDefault(); window.location.href = window.location.pathname; }} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition z-10 shadow-lg">
                          <SafeLucide name="arrow-right" className="w-6 h-6 text-white" />
                     </a>
 
                     <div className="w-full max-w-md space-y-6">
+                        {/* כותרת ולוגו - שוחזר ושופר */}
                         <div className="text-center">
                             <div className="relative inline-block">
                                 <img src={BUILDING_LOGO_URL} className="w-24 h-24 mx-auto rounded-full bg-white p-2 object-contain shadow-2xl border-4 border-gray-800" />
@@ -816,11 +820,18 @@
                         </div>
 
                         <div className="bg-gray-800 p-6 rounded-3xl shadow-2xl border border-gray-700 relative overflow-hidden">
+                            {/* Tabs מעוצבים */}
                             <div className="flex bg-gray-900/50 p-1.5 rounded-xl mb-6 relative">
-                                <button onClick={() => setTab('image')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'image' ? 'bg-blue-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}>
+                                <button 
+                                    onClick={() => setTab('image')} 
+                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'image' ? 'bg-blue-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}
+                                >
                                     <SafeLucide name="image" className="w-4 h-4" /> תמונה למסך
                                 </button>
-                                <button onClick={() => setTab('community')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'community' ? 'bg-purple-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}>
+                                <button 
+                                    onClick={() => setTab('community')} 
+                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'community' ? 'bg-purple-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}
+                                >
                                     <SafeLucide name="message-circle" className="w-4 h-4" /> לוח קהילה
                                 </button>
                             </div>
@@ -836,6 +847,7 @@
                                 <form onSubmit={handleSubmitImage} className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                     <div className="border-2 border-dashed border-gray-600 hover:border-blue-500 hover:bg-gray-700/30 rounded-2xl p-8 text-center relative transition-all group cursor-pointer">
                                         <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full z-10 cursor-pointer" required />
+                                        
                                         {file ? (
                                             <div className="flex flex-col items-center">
                                                 <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition">
@@ -873,19 +885,35 @@
                                             </div>
                                         </div>
                                     </div>
+
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-gray-400 mr-1">תוכן המודעה</label>
-                                        <textarea value={textData.content} onChange={e => setTextData({...textData, content: e.target.value})} placeholder="לדוגמה: למסירה שולחן סלון במצב מצוין..." className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none" rows="3" required />
+                                        <textarea 
+                                            value={textData.content} 
+                                            onChange={e => setTextData({...textData, content: e.target.value})} 
+                                            placeholder="לדוגמה: למסירה שולחן סלון במצב מצוין..." 
+                                            className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none" 
+                                            rows="3" 
+                                            required 
+                                        />
                                     </div>
+
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-gray-400 mr-1">פרטי קשר (יופיעו על המסך)</label>
                                         <div className="relative">
-                                            <input value={textData.contact} onChange={e => setTextData({...textData, contact: e.target.value})} placeholder="שם וטלפון / מספר דירה" className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none" required />
+                                            <input 
+                                                value={textData.contact} 
+                                                onChange={e => setTextData({...textData, contact: e.target.value})} 
+                                                placeholder="שם וטלפון / מספר דירה" 
+                                                className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none" 
+                                                required 
+                                            />
                                             <div className="absolute left-3 top-3 text-gray-500">
                                                 <SafeLucide name="phone" className="w-5 h-5" />
                                             </div>
                                         </div>
                                     </div>
+
                                     <button className="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
                                         <SafeLucide name="send" className="w-5 h-5" />
                                         פרסם מודעה
@@ -893,7 +921,10 @@
                                 </form>
                             )}
                         </div>
-                        <div className="text-center text-xs text-gray-500 mt-8">© {new Date().getFullYear()} {BUILDING_NAME}</div>
+                        
+                        <div className="text-center text-xs text-gray-500 mt-8">
+                            © {new Date().getFullYear()} {BUILDING_NAME}
+                        </div>
                     </div>
                 </div>
             );
@@ -1014,8 +1045,19 @@
                         </a>
                         <div className="bg-gray-900 p-8 rounded-2xl border border-gray-700 w-full max-w-sm text-center">
                             <h2 className="text-xl text-white font-bold mb-4">כניסת ועד</h2>
-                            <input type="password" placeholder="סיסמה" className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 mb-4 text-center" value={pass} onChange={e => setPass(e.target.value)} />
-                            <button onClick={() => pass === ADMIN_PASSWORD ? setAuth(true) : alert("סיסמה שגויה")} className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg">כניסה</button>
+                            <input 
+                                type="password" 
+                                placeholder="סיסמה" 
+                                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 mb-4 text-center"
+                                value={pass}
+                                onChange={e => setPass(e.target.value)}
+                            />
+                            <button 
+                                onClick={() => pass === ADMIN_PASSWORD ? setAuth(true) : alert("סיסמה שגויה")}
+                                className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg"
+                            >
+                                כניסה
+                            </button>
                         </div>
                     </div>
                 );
@@ -1052,7 +1094,11 @@
                                         <span className="font-bold">ערכת נושא</span>
                                         <span className="text-xs text-gray-400">בחר את מראה המסך</span>
                                     </div>
-                                    <select value={settings.theme || 'dark'} onChange={(e) => updateSettings('theme', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 text-sm">
+                                    <select 
+                                        value={settings.theme || 'dark'}
+                                        onChange={(e) => updateSettings('theme', e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    >
                                         <option value="dark">כהה (מומלץ)</option>
                                         <option value="light">בהיר</option>
                                         <option value="auto">אוטומטי (בהיר ביום, כהה בלילה)</option>
@@ -1060,24 +1106,43 @@
                                 </div>
                                 <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
                                     <span className="font-bold">מוזיקת רקע</span>
-                                    <button onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)} className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}>
+                                    <button 
+                                        onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)}
+                                        className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                    >
                                         <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.musicEnabled ? 'right-1' : 'right-7'}`}></div>
                                     </button>
                                 </div>
                                 <div className="bg-gray-700/50 p-4 rounded-xl">
                                     <label className="block text-sm font-bold mb-2">קישור לקובץ מוזיקה (MP3)</label>
-                                    <input value={settings.musicUrl || DEFAULT_MUSIC_URL} onChange={(e) => updateSettings('musicUrl', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 text-sm flex-1 text-left dir-ltr w-full" placeholder="https://example.com/music.mp3" />
+                                    <input 
+                                        value={settings.musicUrl || DEFAULT_MUSIC_URL}
+                                        onChange={(e) => updateSettings('musicUrl', e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded p-2 text-sm flex-1 text-left dir-ltr w-full"
+                                        placeholder="https://example.com/music.mp3"
+                                    />
                                 </div>
                                 <div className="bg-gray-700/50 p-4 rounded-xl">
                                     <div className="flex justify-between mb-2">
                                         <label className="text-sm font-bold">עוצמת שמע</label>
                                         <span className="text-xs text-yellow-400">{Math.round((settings.volume || 0.15) * 100)}%</span>
                                     </div>
-                                    <input type="range" min="0" max="1" step="0.05" value={settings.volume || 0.15} onChange={(e) => updateSettings('volume', parseFloat(e.target.value))} className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500" />
+                                    <input 
+                                        type="range" min="0" max="1" step="0.05"
+                                        value={settings.volume || 0.15}
+                                        onChange={(e) => updateSettings('volume', parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                    />
                                 </div>
                                 <div className="bg-gray-700/50 p-4 rounded-xl">
                                     <label className="block text-sm font-bold mb-2">Gemini API Key (עבור שכתוב הודעות)</label>
-                                    <input type="password" value={settings.geminiKey || ""} onChange={(e) => updateSettings('geminiKey', e.target.value)} placeholder="הדבק כאן את המפתח..." className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                                    <input 
+                                        type="password"
+                                        value={settings.geminiKey || ""}
+                                        onChange={(e) => updateSettings('geminiKey', e.target.value)}
+                                        placeholder="הדבק כאן את המפתח..."
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    />
                                 </div>
                             </div>
                         </section>
@@ -1131,6 +1196,7 @@
                             </div>
                         </section>
 
+                        {/* מודעות קהילה פעילות - שוחזר */}
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
                             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <SafeLucide name="hand-heart" className="w-5 h-5" /> מודעות קהילה פעילות
