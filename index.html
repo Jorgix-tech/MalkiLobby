@@ -54,9 +54,9 @@
                     if (className) i.className = className;
                     ref.current.innerHTML = '';
                     ref.current.appendChild(i);
+                    // התיקון כאן: הסרתי את האילוץ של מציאת השם המדויק במילון
                     window.lucide.createIcons({
-                        root: ref.current,
-                        icons: { [name]: window.lucide.icons[name] }
+                        root: ref.current
                     });
                 }
             }, [name, className]);
