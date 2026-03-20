@@ -1,4 +1,4 @@
-<!-- MASTER V3.5 - SAFE MODE (NO AUTO-OVERWRITE) -->
+<!-- MASTER V3.6 - AUDIO WATCHDOG & GEOMETRY LOCK -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lobby Dashboard - Park Malki</title>
     
-    <!-- ספריות בסיס -->
+    <!-- Base Libraries (Stable CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -42,9 +42,10 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // 1. פונקציות עזר ורכיבים בסיסיים
+        // 1. Core Utilities & Base Components
         // ==========================================
         
+        // Render-safe Lucide component to prevent React DOM conflicts
         const SafeLucide = ({ name, className }) => {
             const ref = useRef(null);
             useEffect(() => {
@@ -79,7 +80,7 @@
             return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
         }
 
-        // פונקציית עזר לקבלת תגיות קהילה
+        // Community tags visual mapping
         function getCommunityTag(type) {
             switch (type) {
                 case 'give': return { text: 'למסירה', class: 'bg-green-100 text-green-700 border-green-500' };
@@ -89,6 +90,7 @@
                 default: return { text: 'כללי', class: 'bg-gray-100 text-gray-700 border-gray-500' };
             }
         }
+        
         function getCommunityTagDark(type) {
             switch (type) {
                 case 'give': return { text: 'למסירה', class: 'text-green-400 border-green-800' };
@@ -120,7 +122,7 @@
         };
 
         // ==========================================
-        // 2. הגדרות ונתונים
+        // 2. Configuration & Data Payloads
         // ==========================================
 
         const FIREBASE_CONFIG = {
@@ -169,7 +171,7 @@
             ]
         };
 
-        // --- Data Management ---
+        // --- Data Management / Firestore Init ---
         let db = null;
         let dbDisabled = false;
 
@@ -211,11 +213,11 @@
                                 }
                                 localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
                             } else {
-                                // תיקון קריטי: לא לכתוב לבד!
+                                // Do not overwrite automatically. Maintain read-only fail-safe status.
                                 console.log(`No data found for ${STORAGE_KEY} in cloud. Waiting for manual save.`);
                             }
                         }, error => {
-                            console.warn("Firestore offline mode");
+                            console.warn("Firestore offline mode active");
                             dbDisabled = true;
                         });
                     } catch (e) { dbDisabled = true; }
@@ -229,7 +231,7 @@
                 if (db && !dbDisabled) {
                     db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
                         if (err.code === 'permission-denied') {
-                            alert("שים לב: הנתונים נשמרו במכשיר זה בלבד (אין הרשאת ענן).");
+                            alert("Permission denied. Data saved locally only.");
                         }
                     });
                 }
@@ -238,7 +240,7 @@
             return [data, updateData];
         };
 
-        // --- Fetch Hebrew Holidays ---
+        // --- Ext API: Fetch Hebrew Holidays ---
         const useHebrewCalendar = () => {
             const [holidays, setHolidays] = useState([]);
             useEffect(() => {
@@ -267,7 +269,7 @@
             return holidays;
         };
 
-        // --- Gemini AI ---
+        // --- Ext API: Gemini ---
         const generateGeminiText = async (prompt, key) => {
             if (!key) return null;
             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
@@ -287,7 +289,9 @@
             } catch (error) { return null; }
         };
 
-        // --- 3. COMPONENTS ---
+        // ==========================================
+        // 3. UI COMPONENTS
+        // ==========================================
 
         const OfflineBanner = ({ show }) => {
             if (!show) return null;
@@ -301,6 +305,7 @@
         const BackgroundMusic = ({ enabled, volume, url, setIsBlocked }) => {
             const audioRef = useRef(null);
             
+            // Core Audio Manager
             useEffect(() => {
                 const audio = audioRef.current;
                 if (audio && url) {
@@ -321,6 +326,19 @@
                 }
             }, [enabled, volume, url]);
             
+            // Watchdog Loop to enforce Autoplay constraints bypass
+            useEffect(() => {
+                const watchdog = setInterval(() => {
+                    if (enabled && url && audioRef.current && audioRef.current.paused) {
+                        audioRef.current.play().catch(e => {
+                            if(setIsBlocked) setIsBlocked(true);
+                        });
+                    }
+                }, 5000); // Pulse check every 5 seconds
+                return () => clearInterval(watchdog);
+            }, [enabled, url]);
+
+            // User gesture interceptors
             useEffect(() => {
                 const enableSound = () => {
                     if (audioRef.current && enabled && url) { 
@@ -651,7 +669,6 @@
 
                         {tab === 1 && approvedCommunity.map((item) => {
                             const tagStyle = getCommunityTag(item.type);
-                            // התאמה לערכת נושא בהירה
                             const borderClass = isDark ? '' : tagStyle.class.split(' ').pop().replace('text', 'border');
 
                             return (
@@ -688,11 +705,12 @@
                         )}
                     </div>
 
+                    {/* Rigid Geometry added for QR codes to prevent flexbox collapse */}
                     <div className={`mt-auto pt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                         <div className="flex justify-between gap-2">
                             {qrCodes.map((qr) => (
-                                <div key={qr.id} className="bg-white p-1.5 rounded-lg flex flex-col items-center gap-1 shadow-lg w-1/4">
-                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(qr.link)}`} className="w-full object-contain mix-blend-multiply" />
+                                <div key={qr.id} className="bg-white p-1.5 rounded-lg flex flex-col items-center justify-center gap-1 shadow-lg w-1/4 shrink-0 min-w-[60px]">
+                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qr.link)}`} className="w-full aspect-square object-contain mix-blend-multiply shrink-0" />
                                     <span className="text-black font-bold text-[8px] text-center leading-tight truncate w-full">{qr.label}</span>
                                 </div>
                             ))}
@@ -1370,17 +1388,9 @@
                 handleHash();
                 return () => window.removeEventListener('hashchange', handleHash);
             }, []);
-            
-            // Auto Refresh
-            useEffect(() => {
-                const REFRESH_INTERVAL = 15 * 60 * 1000;
-                const timer = setInterval(() => {
-                    if (window.location.hash !== '#admin' && window.location.hash !== '#upload') {
-                         window.location.reload();
-                    }
-                }, REFRESH_INTERVAL);
-                return () => clearInterval(timer);
-            }, []);
+
+            // Hard reload interval removed to prevent Autoplay Policy override issues.
+            // Firebase onSnapshot real-time sync makes this redundant anyway.
 
             if (view === 'upload') return <UploadView slides={slides} community={community} onUploadSlides={setSlides} onUploadCommunity={setCommunity} />;
             
@@ -1420,14 +1430,13 @@
             );
         };
 
-        // הוספתי בדיקה ש-React מוכן לפני הריצה
         window.addEventListener('load', () => {
             if (typeof ReactDOM !== 'undefined') {
                 const root = ReactDOM.createRoot(document.getElementById('root'));
                 root.render(<App />);
             } else {
                 console.error("ReactDOM failed to load");
-                document.getElementById('root').innerHTML = '<div style="color:white; text-align:center; padding: 20px;">שגיאה בטעינת המערכת (CDN). נא לרענן.</div>';
+                document.getElementById('root').innerHTML = '<div style="color:white; text-align:center; padding: 20px;">Error loading CDN. Please refresh.</div>';
             }
         });
     </script>
