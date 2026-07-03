@@ -269,6 +269,42 @@
             return holidays;
         };
 
+        // --- Ext API: Fetch Shabbat Times ---
+        const useShabbatTimes = () => {
+            const [shabbat, setShabbat] = useState(null);
+            useEffect(() => {
+                const fetchShabbat = async () => {
+                    try {
+                        // Geonameid 293397 is Rishon LeZion
+                        const res = await fetch(`https://www.hebcal.com/shabbat?cfg=json&geonameid=293397&m=50&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                let parasha = "", candles = "", havdalah = "", candleDate = null;
+                                data.items.forEach(item => {
+                                    if (item.category === 'parashat') parasha = item.hebrew;
+                                    if (item.category === 'candles') {
+                                        candleDate = item.date; // ISO string
+                                        const date = new Date(item.date);
+                                        candles = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                    if (item.category === 'havdalah') {
+                                        const date = new Date(item.date);
+                                        havdalah = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                });
+                                if (parasha && candles && havdalah && candleDate) {
+                                    setShabbat({ parasha, candles, havdalah, candleDate });
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                };
+                fetchShabbat();
+            }, []);
+            return shabbat;
+        };
+
         // --- Ext API: Gemini ---
         const generateGeminiText = async (prompt, key) => {
             if (!key) return null;
@@ -433,13 +469,13 @@
                 return () => { clearInterval(timer); clearInterval(wTimer); };
             }, []);
 
-            const bgClass = isDark ? "bg-[#1a1a1a]" : "bg-white shadow-md border-gray-200";
-            const textClass = isDark ? "text-white" : "text-gray-900";
-            const subTextClass = isDark ? "text-gray-400" : "text-gray-500";
-            const cardClass = isDark ? "bg-gray-800/40 border-gray-700/50" : "bg-white border-gray-200 shadow-sm";
+            const bgClass = isDark ? "bg-[#0f0f13]/80 backdrop-blur-2xl" : "bg-white/90 backdrop-blur-2xl shadow-xl border-gray-200";
+            const textClass = isDark ? "text-white drop-shadow-md" : "text-gray-900 drop-shadow-sm";
+            const subTextClass = isDark ? "text-gray-300" : "text-gray-600";
+            const cardClass = isDark ? "bg-white/5 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] backdrop-blur-xl" : "bg-gray-50 border-gray-200 shadow-sm";
 
             return (
-                <div className={`h-32 ${bgClass} flex items-center justify-between px-8 border-b-4 ${isDark ? 'border-gray-800' : 'border-blue-500'} relative z-20 transition-colors duration-500`}>
+                <div className={`h-32 ${bgClass} flex items-center justify-between px-8 border-b border-white/10 relative z-20 transition-all duration-500`}>
                     <div className="flex items-center gap-6 w-1/4">
                         <div className={`${isDark ? 'bg-white/10' : 'bg-gray-100'} p-3 rounded-2xl backdrop-blur-sm shadow-inner`}>
                             <img src={BUILDING_LOGO_URL} alt="Logo" className="w-full h-16 object-contain" />
@@ -607,10 +643,10 @@
                 return () => clearInterval(interval);
             }, [approvedSlides.length]);
 
-            if (approvedSlides.length === 0) return <div className={`w-full h-full rounded-3xl flex items-center justify-center ${isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-200 text-gray-400'}`}>אין תמונות להצגה</div>;
+            if (approvedSlides.length === 0) return <div className={`w-full h-full rounded-[2.5rem] flex items-center justify-center ${isDark ? 'bg-white/5 text-gray-500 border border-white/10' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>אין תמונות להצגה</div>;
 
             return (
-                <div className={`relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-4 ${isDark ? 'border-gray-800 bg-black' : 'border-gray-200 bg-white'} group`}>
+                <div className={`relative w-full h-full rounded-[2.5rem] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border ${isDark ? 'border-white/10 bg-[#0f0f13]' : 'border-gray-200 bg-white'} group transition-all duration-500`}>
                     {approvedSlides.map((slide, index) => (
                         <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
                             <img src={slide.url} className={`w-full h-full object-contain ${isDark ? 'bg-black' : 'bg-white'}`} />
@@ -624,46 +660,64 @@
         const CarouselBoard = ({ messages, community, events, qrCodes, isDark }) => {
             const [tab, setTab] = useState(0); 
             const holidays = useHebrewCalendar();
+            const shabbat = useShabbatTimes();
 
             const approvedCommunity = (community || []).filter(c => c.status === 'approved');
             const allEvents = [...(events || []), ...holidays].sort((a, b) => new Date(a.date) - new Date(b.date));
             const hasCommunity = approvedCommunity.length > 0;
+            
+            // Logic to determine if Shabbat widget should show (2 days before or during)
+            let hasShabbat = false;
+            if (shabbat && shabbat.candleDate) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const cDate = new Date(shabbat.candleDate);
+                cDate.setHours(0, 0, 0, 0);
+                const diffDays = (cDate - today) / (1000 * 60 * 60 * 24);
+                // diffDays <= 2 means Wednesday(2), Thursday(1), Friday(0)
+                // diffDays >= -1 means Saturday(-1)
+                if (diffDays <= 2 && diffDays >= -1) {
+                    hasShabbat = true;
+                }
+            }
             
             useEffect(() => {
                 const interval = setInterval(() => {
                     setTab(prev => {
                         let next = prev + 1;
                         if (next === 1 && !hasCommunity) next = 2;
-                        if (next > 2) next = 0;
+                        if (next === 3 && !hasShabbat) next = 0;
+                        if (next > 3) next = 0;
                         return next;
                     });
                 }, 15000); 
                 return () => clearInterval(interval);
-            }, [hasCommunity]);
+            }, [hasCommunity, hasShabbat]);
 
             const isEventToday = (dateStr) => {
                 const today = new Date().toISOString().split('T')[0];
                 return dateStr.startsWith(today);
             };
 
-            const bgClass = isDark ? "bg-gray-900/95 border-gray-700" : "bg-white/95 border-gray-200";
-            const textClass = isDark ? "text-white" : "text-gray-900";
-            const subTextClass = isDark ? "text-gray-400" : "text-gray-600";
-            const cardBgClass = isDark ? "bg-gray-800/60" : "bg-gray-50";
+            const bgClass = isDark ? "bg-black/40 backdrop-blur-2xl border-white/10" : "bg-white/80 backdrop-blur-2xl border-gray-200";
+            const textClass = isDark ? "text-white drop-shadow-md" : "text-gray-900 drop-shadow-sm";
+            const subTextClass = isDark ? "text-gray-300" : "text-gray-600";
+            const cardBgClass = isDark ? "bg-white/10 hover:bg-white/15 border-white/5" : "bg-white hover:bg-gray-50 shadow-sm";
 
             return (
-                <div className={`${bgClass} rounded-3xl p-6 h-full border flex flex-col shadow-xl backdrop-blur-sm relative transition-all duration-500`}>
-                    <div className={`flex items-center gap-3 mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} pb-4 shrink-0 h-16`}>
+                <div className={`${bgClass} rounded-[2.5rem] p-6 h-full border flex flex-col shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] relative transition-all duration-500`}>
+                    <div className={`flex items-center gap-4 mb-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'} pb-3 shrink-0 h-14`}>
                         {tab === 0 && <React.Fragment><div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div><h2 className={`text-2xl font-bold ${textClass}`}>הודעות ועד הבית</h2></React.Fragment>}
                         {tab === 1 && <React.Fragment><SafeLucide name="hand-heart" className="w-8 h-8 text-pink-500" /><h2 className={`text-2xl font-bold ${textClass}`}>לוח קהילה</h2></React.Fragment>}
                         {tab === 2 && <React.Fragment><SafeLucide name="calendar" className="w-8 h-8 text-blue-500" /><h2 className={`text-2xl font-bold ${textClass}`}>אירועים קרובים</h2></React.Fragment>}
+                        {tab === 3 && <React.Fragment><SafeLucide name="star" className="w-8 h-8 text-blue-400" /><h2 className={`text-2xl font-bold ${textClass}`}>זמני שבת וחג</h2></React.Fragment>}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar mb-2 pr-2">
                         {tab === 0 && messages.map((msg) => (
-                            <div key={msg.id} className={`${cardBgClass} p-4 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500`}>
-                                <h3 className="text-lg font-bold text-yellow-600 mb-1">{msg.title}</h3>
-                                <p className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-base leading-relaxed`}>{msg.content}</p>
+                            <div key={msg.id} className={`${cardBgClass} p-3 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500`}>
+                                <h3 className="text-base font-bold text-yellow-600 mb-1">{msg.title}</h3>
+                                <p className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-sm leading-relaxed`}>{msg.content}</p>
                             </div>
                         ))}
 
@@ -701,6 +755,35 @@
                                         {isEventToday(evt.date) && <span className="mr-auto bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full animate-pulse">היום!</span>}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {tab === 3 && shabbat && (
+                            <div className={`flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-500 text-center justify-center items-center rounded-2xl ${isDark ? 'bg-gradient-to-br from-blue-900/40 to-purple-900/40 border border-blue-500/30' : 'bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200'} p-3`}>
+                                <div className="text-2xl mb-1">✨</div>
+                                <h3 className={`text-xl font-black mb-1 ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>שבת שלום</h3>
+                                <div className={`text-base font-bold mb-4 px-4 py-1 rounded-full ${isDark ? 'bg-blue-500/20 text-blue-200' : 'bg-blue-200 text-blue-800'}`}>
+                                    {shabbat.parasha}
+                                </div>
+                                
+                                <div className="flex w-full justify-around mt-1">
+                                    <div className="flex flex-col items-center">
+                                        <span className={`text-xs mb-1 ${subTextClass}`}>כניסת שבת</span>
+                                        <span className={`text-3xl font-bold ${textClass}`}>{shabbat.candles}</span>
+                                    </div>
+                                    <div className={`w-px h-12 ${isDark ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+                                    <div className="flex flex-col items-center">
+                                        <span className={`text-xs mb-1 ${subTextClass}`}>צאת שבת</span>
+                                        <span className={`text-3xl font-bold ${textClass}`}>{shabbat.havdalah}</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex gap-4 mt-6 opacity-80 text-3xl">
+                                    <span>📖</span>
+                                    <span>🕯️</span>
+                                    <span>🍷</span>
+                                    <span>🍞</span>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1406,17 +1489,20 @@
             
             return (
                 <div 
-                    className={`h-screen w-screen flex flex-col font-sans overflow-hidden transition-colors duration-500 ${isDark ? 'bg-[#111] text-white' : 'bg-gray-100 text-gray-900'}`}
+                    className={`h-screen w-screen flex flex-col font-sans overflow-hidden transition-colors duration-500 ${isDark ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-900 via-[#111] to-black text-white' : 'bg-gradient-to-br from-gray-50 to-gray-200 text-gray-900'}`}
                     style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }} 
                 >
                     <TopHeader isDark={isDark} />
-                    <div className="flex-1 flex gap-6 p-6 pb-24 overflow-hidden">
-                        <div className="w-1/3 h-full">
+                    <div className="flex-1 flex gap-6 p-6 pb-20 overflow-hidden relative z-10">
+                        <div className="w-2/5 h-full">
                             <CarouselBoard messages={messages} community={community} events={events} qrCodes={qrCodes} isDark={isDark} />
                         </div>
-                        <div className="w-2/3 h-full flex flex-col gap-6">
-                            <div className="h-[65%]"><ImageSlideshow slides={slides} isDark={isDark} /></div>
-                            <div className="h-[35%]"><BuildingStatus items={status} isDark={isDark} /></div>
+                        <div className="w-3/5 h-full flex flex-col gap-6">
+                            <div className="h-full w-full relative">
+                                {/* Decorative glow behind slideshow */}
+                                <div className={`absolute -inset-4 rounded-[3rem] blur-3xl opacity-20 ${isDark ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-transparent'} -z-10`}></div>
+                                <ImageSlideshow slides={slides} isDark={isDark} />
+                            </div>
                         </div>
                     </div>
                     
