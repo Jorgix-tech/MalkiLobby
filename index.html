@@ -273,9 +273,10 @@
                                 setHolidays(upcoming.slice(0, 3));
                             }
                         }
-                    } catch (e) {}
                 };
                 fetchHolidays();
+                const interval = setInterval(fetchHolidays, 43200000); // Refetch every 12 hours
+                return () => clearInterval(interval);
             }, []);
             return holidays;
         };
@@ -304,14 +305,16 @@
                                         havdalah = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
                                     }
                                 });
-                                if (parasha && candles && havdalah && candleDate) {
-                                    setShabbat({ parasha, candles, havdalah, candleDate });
+                                // parasha might be empty during some holidays
+                                if (candles && havdalah && candleDate) {
+                                    setShabbat({ parasha: parasha || "חג שמח", candles, havdalah, candleDate });
                                 }
                             }
                         }
-                    } catch (e) {}
                 };
                 fetchShabbat();
+                const interval = setInterval(fetchShabbat, 43200000); // Refetch every 12 hours
+                return () => clearInterval(interval);
             }, []);
             return shabbat;
         };
@@ -687,7 +690,7 @@
                 today.setHours(0, 0, 0, 0);
                 const cDate = new Date(shabbat.candleDate);
                 cDate.setHours(0, 0, 0, 0);
-                const diffDays = (cDate - today) / (1000 * 60 * 60 * 24);
+                const diffDays = Math.round((cDate - today) / (1000 * 60 * 60 * 24));
                 // diffDays <= 2 means Wednesday(2), Thursday(1), Friday(0)
                 // diffDays >= -1 means Saturday(-1)
                 if (diffDays <= 2 && diffDays >= -1) {
