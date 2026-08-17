@@ -273,6 +273,7 @@
                                 setHolidays(upcoming.slice(0, 3));
                             }
                         }
+                    } catch (e) { console.error("Error fetching holidays:", e); }
                 };
                 fetchHolidays();
                 const interval = setInterval(fetchHolidays, 43200000); // Refetch every 12 hours
@@ -311,6 +312,7 @@
                                 }
                             }
                         }
+                    } catch (e) { console.error("Error fetching shabbat times:", e); }
                 };
                 fetchShabbat();
                 const interval = setInterval(fetchShabbat, 43200000); // Refetch every 12 hours
