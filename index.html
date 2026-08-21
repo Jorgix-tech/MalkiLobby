@@ -1,4 +1,4 @@
-<!-- MASTER V3.6 - AUDIO WATCHDOG & GEOMETRY LOCK -->
+<!-- MASTER V3.7 - AUDIO WATCHDOG & MP3 UPLOAD SUPPORT -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -16,6 +16,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&family=Outfit:wght@400;700;900&family=Rubik:wght@400;700;900&display=swap" rel="stylesheet">
     
@@ -113,9 +114,263 @@
         }
 
         const Icons = {
-            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
+            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1-12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
             CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
             Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/></svg>,
+            Rain: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
+            Storm: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/><path d="m13 13-2 3h2l-2 3"/></svg>,
+            Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+            Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        };
+
+        const WeatherIcon = ({ code }) => {
+            if (code === undefined) return <Icons.Sun />;
+            if (code <= 1) return <Icons.Sun />;
+            if (code <= 3) return <Icons.CloudSun />;
+            if (code <= 48) return <Icons.Cloud />;
+            if (code <= 67) return <Icons.Rain />;
+            if (code <= 99) return <Icons.Storm />;
+            return <Icons.CloudSun />;
+        };
+
+        // ==========================================
+        // 2. Configuration & Data Payloads
+        // ==========================================
+
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCumvAyzyyD28N90zj6YQcHJnKI5n7OyWw",
+            authDomain: "malkipark.firebaseapp.com",
+            projectId: "malkipark",
+            storageBucket: "malkipark.firebasestorage.app",
+            messagingSenderId: "891076226163",
+            appId: "1:891076226163:web:769ae68ad5f6c4b6930e06",
+            measurementId: "G-JPSF0M7V28"
+        };
+
+        const BUILDING_NAME = "מלכי פארק";
+        const BUILDING_ADDRESS = "יעקב בן סירא 7-9-11";
+        const BUILDING_LOGO_URL = "https://www.malki-g.co.il/wp-content/uploads/2020/12/3958_347AE772-381E-D0FC-501C-6BE026B729D9.jpg"; 
+        const NEWS_LOGO_URL = "https://ynet-pic1.yit.co.il/picserver5/wcm_upload/2024/07/09/B1LH3j5DR/new_logo_gif_ynet.gif";
+        const ALERT_CITY = "ראשון לציון";
+        const ADMIN_PASSWORD = "1234";
+
+        const INITIAL_DATA = {
+            settings: { 
+                musicEnabled: false, 
+                volume: 0.15,
+                musicUrl: "", 
+                geminiKey: "",
+                theme: "dark"
+            },
+            messages: [
+                { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." }
+            ],
+            community: [], 
+            events: [], 
+            status: [
+                { id: 1, label: "ניקיון", icon: "sparkles", type: "schedule", days: [0, 2, 4] },
+                { id: 2, label: "גנן", icon: "flower-2", type: "schedule", days: [2] },
+                { id: 3, label: "מעליות", icon: "arrow-up-from-line", type: "manual", active: true, text: "תקין" },
+                { id: 4, label: "פינוי אשפה", icon: "trash-2", type: "schedule", days: },
+                { id: 5, label: "אינטרנט לובי", icon: "wifi", type: "system" }
+            ],
+            qrCodes: [
+                { id: 1, label: "קבוצת דיירים", link: "https://wa.me/972500000000" },
+                { id: 4, label: "העלאת תמונות", link: window.location.href.split('#')[0] + "#upload" }
+            ],
+            slides: [
+                { id: 1, url: "https://images.unsplash.com/photo-1460317442991-0ec209397118?q=80&w=2070&auto=format&fit=crop", status: 'approved' }
+            ]
+        };
+
+        // --- Data Management / Firestore & Storage Init ---
+        let db = null;
+        let storage = null;
+        let dbDisabled = false;
+
+        try {
+            if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
+                db = firebase.firestore();
+                if (firebase.storage) {
+                    storage = firebase.storage();
+                }
+            }
+        } catch (e) {
+            console.warn("Firebase init failed:", e);
+            dbDisabled = true;
+        }
+
+        const useData = (collectionName, initialValue) => {
+            const STORAGE_KEY = collectionName; 
+
+            const [data, setData] = useState(() => {
+                try {
+                    const cached = localStorage.getItem(STORAGE_KEY);
+                    return cached ? JSON.parse(cached) : initialValue;
+                } catch (e) {
+                    return initialValue;
+                }
+            });
+            
+            useEffect(() => {
+                let unsubscribe = () => {};
+                if (db && !dbDisabled) {
+                    try {
+                        unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
+                            if (doc.exists) {
+                                const remoteData = doc.data().items;
+                                if (!Array.isArray(remoteData) && typeof remoteData === 'object') {
+                                     setData({ ...initialValue, ...remoteData });
+                                } else {
+                                     setData(remoteData);
+                                }
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
+                            } else {
+                                console.log(`No data found for ${STORAGE_KEY} in cloud. Waiting for manual save.`);
+                            }
+                        }, error => {
+                            console.warn("Firestore offline mode active");
+                            dbDisabled = true;
+                        });
+                    } catch (e) { dbDisabled = true; }
+                }
+                return () => unsubscribe();
+            }, []);
+
+            const updateData = (newData) => {
+                setData(newData);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+                if (db && !dbDisabled) {
+                    db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
+                        if (err.code === 'permission-denied') {
+                            alert("Permission denied. Data saved locally only.");
+                        }
+                    });
+                }
+            };
+
+            return [data, updateData];
+        };
+
+        // --- Ext API: Fetch Hebrew Holidays ---
+        const useHebrewCalendar = () => {
+            const [holidays, setHolidays] = useState([]);
+            useEffect(() => {
+                const fetchHolidays = async () => {
+                    try {
+                        const res = await fetch(`https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&nx=on&year=now&month=x&ss=on&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                const upcoming = data.items.filter(item => {
+                                    const itemDate = new Date(item.date);
+                                    return itemDate >= new Date(new Date().setDate(new Date().getDate() - 1));
+                                }).map(item => ({
+                                    id: 'heb_' + item.date,
+                                    date: item.date,
+                                    title: item.hebrew,
+                                    type: 'holiday'
+                                }));
+                                setHolidays(upcoming.slice(0, 3));
+                            }
+                        }
+                    } catch (e) { console.error("Error fetching holidays:", e); }
+                };
+                fetchHolidays();
+                const interval = setInterval(fetchHolidays, 43200000);
+                return () => clearInterval(interval);
+            }, []);
+            return holidays;
+        };
+
+        // --- Ext API: Fetch Shabbat Times ---
+        const useShabbatTimes = () => {
+            const [shabbat, setShabbat] = useState(null);
+            useEffect(() => {
+                const fetchShabbat = async () => {
+                    try {
+                        const res = await fetch(`https://www.hebcal.com/shabbat?cfg=json&geonameid=293397&m=50&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                let parasha = "", candles = "", havdalah = "", candleDate = null;
+                                data.items.forEach(item => {
+                                    if (item.category === 'parashat') parasha = item.hebrew;
+                                    if (item.category === 'candles') {
+                                        candleDate = item.date;
+                                        const date = new Date(item.date);
+                                        candles = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                    if (item.category === 'havdalah') {
+                                        const date = new Date(item.date);
+                                        havdalah = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                });
+                                if (candles && havdalah && candleDate) {
+                                    setShabbat({ parasha: parasha || "חג שמח", candles, havdalah, candleDate });
+                                }
+                            }
+                        }
+                    } catch (e) { console.error("Error fetching shabbat times:", e); }
+                };
+                fetchShabbat();
+                const interval = setInterval(fetchShabbat, 43200000);
+                return () => clearInterval(interval);
+            }, []);
+            return shabbat;
+        };
+
+        // --- Ext API: Gemini ---
+        const generateGeminiText = async (prompt, key) => {
+            if (!key) return null;
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `אתה עוזר לוועד בית. נסח הודעה רשמית וקצרה לדיירים על בסיס: '${prompt}'.` }] }]
+                    })
+                });
+                const data = await response.json();
+                if (data.candidates && data.candidates[0].content.parts[0].text) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                }
+                return null;
+            } catch (error) { return null; }
+        };
+
+        // ==========================================
+        // 3. UI COMPONENTS
+        // ==========================================
+
+        const OfflineBanner = ({ show }) => {
+            if (!show) return null;
+            return (
+                <div className="fixed top-36 left-1/2 -translate-x-1/2 bg-yellow-600 text-white px-6 py-2 rounded-full z-40 shadow-xl border-2 border-yellow-400 animate-pulse font-bold text-lg">
+                    ⚠️ עובד במצב לא מקוון
+                </div>
+            );
+        };
+
+        const BackgroundMusic = ({ enabled, volume, url, setIsBlocked }) => {
+            const audioRef = useRef(null);
+            
+            // Core Audio Manager
+            useEffect(() => {
+                const audio = audioRef.current;
+                if (audio && url) {
+                    audio.volume = volume;
+                    if (enabled) {
+                        const playPromise = audio.play();
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                if(setIsBlocked) setIsBlocked(false);
+                            }).catch(error => {
+                Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/></svg>,
             Rain: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
             Storm: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/><path d="m13 13-2 3h2l-2 3"/></svg>,
             Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
