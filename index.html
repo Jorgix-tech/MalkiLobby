@@ -1,0 +1,1718 @@
+<!-- MASTER V3.7 - AUDIO WATCHDOG & MP3 UPLOAD SUPPORT -->
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobby Dashboard - Park Malki</title>
+    
+    <!-- Base Libraries (Stable CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.4/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&family=Outfit:wght@400;700;900&family=Rubik:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        html, body { 
+            font-family: 'Heebo', sans-serif; 
+            background-color: #0f0f13;
+            color: white;
+            margin: 0; 
+            padding: 0; 
+            height: 100%;
+            width: 100%;
+            overflow: hidden; 
+            /* Kiosk touch protections */
+            -webkit-user-select: none; /* Safari */
+            -ms-user-select: none; /* IE 10 and IE 11 */
+            user-select: none; /* Standard syntax */
+            -webkit-touch-callout: none; /* iOS Safari */
+            -webkit-user-drag: none;
+        }
+        .page-admin { height: 100vh; overflow-y: auto; background: #1a1a1a; color: white; user-select: auto; }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(100%); } }
+        @keyframes highlight-pulse { 0%, 100% { border-color: rgba(234, 179, 8, 0.5); background-color: rgba(234, 179, 8, 0.1); } 50% { border-color: rgba(234, 179, 8, 1); background-color: rgba(234, 179, 8, 0.2); } }
+        .event-today { animation: highlight-pulse 2s infinite; border: 2px solid; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 100, 100, 0.2); border-radius: 10px; }
+        
+        @media (max-width: 768px) {
+            .mobile-p-4 { padding: 1rem !important; }
+            .mobile-text-sm { font-size: 0.875rem !important; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ==========================================
+        // 1. Core Utilities & Base Components
+        // ==========================================
+        
+        // Render-safe Lucide component to prevent React DOM conflicts
+        const SafeLucide = ({ name, className }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current && window.lucide) {
+                    const i = document.createElement('i');
+                    i.setAttribute('data-lucide', name);
+                    if (className) i.className = className;
+                    ref.current.innerHTML = '';
+                    ref.current.appendChild(i);
+                    window.lucide.createIcons({
+                        root: ref.current
+                    });
+                }
+            }, [name, className]);
+            return <span ref={ref} style={{ display: 'contents' }}></span>;
+        };
+
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            componentDidCatch(error, errorInfo) {
+                console.error("Lobby Dashboard Error:", error, errorInfo);
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-screen bg-[#0f0f13] text-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
+                            <div className="bg-red-500/10 border-2 border-red-500/30 rounded-3xl p-8 max-w-xl flex flex-col items-center gap-4 shadow-2xl backdrop-blur-xl">
+                                <div className="text-5xl">⚠️</div>
+                                <h1 className="text-3xl font-black text-red-400">שגיאה בטעינת המערכת</h1>
+                                <p className="text-gray-300 text-lg">{this.state.error && this.state.error.message ? this.state.error.message : "אירעה שגיאה בטעינת המסך."}</p>
+                                <div className="flex gap-4 mt-4">
+                                    <button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl transition shadow-lg">
+                                        רענן עמוד
+                                    </button>
+                                    <a href="#admin" onClick={() => { this.setState({ hasError: false }); window.location.hash = '#admin'; }} className="bg-gray-700 hover:bg-gray-600 text-white font-bold px-6 py-3 rounded-xl transition">
+                                        כניסה לפאנל ניהול
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+
+        function isNightTime() {
+            const h = new Date().getHours();
+            return h >= 18 || h < 6;
+        }
+
+        function getDayName(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { weekday: 'short' });
+        }
+        
+        function getDateShort(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+        }
+
+        // Community tags visual mapping
+        function getCommunityTag(type) {
+            switch (type) {
+                case 'give': return { text: 'למסירה', class: 'bg-green-100 text-green-700 border-green-500' };
+                case 'sale': return { text: 'למכירה', class: 'bg-blue-100 text-blue-700 border-blue-500' };
+                case 'donate': return { text: 'לתרומה', class: 'bg-yellow-100 text-yellow-700 border-yellow-500' };
+                case 'lost': return { text: 'אבידה/מציאה', class: 'bg-purple-100 text-purple-700 border-purple-500' };
+                default: return { text: 'כללי', class: 'bg-gray-100 text-gray-700 border-gray-500' };
+            }
+        }
+        
+        function getCommunityTagDark(type) {
+            switch (type) {
+                case 'give': return { text: 'למסירה', class: 'text-green-400 border-green-800' };
+                case 'sale': return { text: 'למכירה', class: 'text-blue-400 border-blue-800' };
+                case 'donate': return { text: 'לתרומה', class: 'text-yellow-400 border-yellow-800' };
+                case 'lost': return { text: 'אבידה/מציאה', class: 'text-purple-400 border-purple-800' };
+                default: return { text: 'כללי', class: 'text-gray-400 border-gray-700' };
+            }
+        }
+
+        const Icons = {
+            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>,
+            CloudSun: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-200"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>,
+            Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/></svg>,
+            Rain: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>,
+            Storm: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M17.5 19c0-1.7-1.3-3-3-3h-11a4 4 0 0 1-1.1-7.9 4 4 0 0 1 4.7-4 5 5 0 0 1 8.9 2.1 4 4 0 0 1 1.5 12.8"/><path d="m13 13-2 3h2l-2 3"/></svg>,
+            Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 animate-bounce"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+            Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-pulse"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        };
+
+        const WeatherIcon = ({ code }) => {
+            if (code === undefined) return <Icons.Sun />;
+            if (code <= 1) return <Icons.Sun />;
+            if (code <= 3) return <Icons.CloudSun />;
+            if (code <= 48) return <Icons.Cloud />;
+            if (code <= 67) return <Icons.Rain />;
+            if (code <= 99) return <Icons.Storm />;
+            return <Icons.CloudSun />;
+        };
+
+        // ==========================================
+        // 2. Configuration & Data Payloads
+        // ==========================================
+
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCumvAyzyyD28N90zj6YQcHJnKI5n7OyWw",
+            authDomain: "malkipark.firebaseapp.com",
+            projectId: "malkipark",
+            storageBucket: "malkipark.firebasestorage.app",
+            messagingSenderId: "891076226163",
+            appId: "1:891076226163:web:769ae68ad5f6c4b6930e06",
+            measurementId: "G-JPSF0M7V28"
+        };
+
+        const BUILDING_NAME = "מלכי פארק";
+        const BUILDING_ADDRESS = "יעקב בן סירא 7-9-11";
+        const BUILDING_LOGO_URL = "https://www.malki-g.co.il/wp-content/uploads/2020/12/3958_347AE772-381E-D0FC-501C-6BE026B729D9.jpg"; 
+        const NEWS_LOGO_URL = "https://ynet-pic1.yit.co.il/picserver5/wcm_upload/2024/07/09/B1LH3j5DR/new_logo_gif_ynet.gif";
+        const ALERT_CITY = "ראשון לציון";
+        const ADMIN_PASSWORD = "1234";
+
+        const INITIAL_DATA = {
+            settings: { 
+                musicEnabled: false, 
+                volume: 0.15,
+                musicUrl: "", 
+                geminiKey: "",
+                theme: "dark"
+            },
+            messages: [
+                { id: 1, title: "ברוכים הבאים", content: "מערכת המידע החדשה של הבניין פעילה." }
+            ],
+            community: [], 
+            events: [], 
+            status: [
+                { id: 1, label: "ניקיון", icon: "sparkles", type: "schedule", days: [0, 2, 4] },
+                { id: 2, label: "גנן", icon: "flower-2", type: "schedule", days: [2] },
+                { id: 3, label: "מעליות", icon: "arrow-up-from-line", type: "manual", active: true, text: "תקין" },
+                { id: 4, label: "פינוי אשפה", icon: "trash-2", type: "schedule", days: [1, 3, 5] },
+                { id: 5, label: "אינטרנט לובי", icon: "wifi", type: "system" }
+            ],
+            qrCodes: [
+                { id: 1, label: "קבוצת דיירים", link: "https://wa.me/972500000000" },
+                { id: 4, label: "העלאת תמונות", link: window.location.href.split('#')[0] + "#upload" }
+            ],
+            slides: [
+                { id: 1, url: "https://images.unsplash.com/photo-1460317442991-0ec209397118?q=80&w=2070&auto=format&fit=crop", status: 'approved' }
+            ]
+        };
+
+        // --- Data Management / Firestore & Storage Init ---
+        let db = null;
+        let storage = null;
+        let dbDisabled = false;
+
+        try {
+            if (typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey) {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
+                db = firebase.firestore();
+                if (typeof firebase.storage === 'function') {
+                    storage = firebase.storage();
+                }
+            }
+        } catch (e) {
+            console.warn("Firebase init failed:", e);
+            dbDisabled = true;
+        }
+
+        const useData = (collectionName, initialValue) => {
+            const STORAGE_KEY = collectionName; 
+
+            const [data, setData] = useState(() => {
+                try {
+                    const cached = localStorage.getItem(STORAGE_KEY);
+                    return cached ? JSON.parse(cached) : initialValue;
+                } catch (e) {
+                    return initialValue;
+                }
+            });
+            
+            useEffect(() => {
+                let unsubscribe = () => {};
+                if (db && !dbDisabled) {
+                    try {
+                        unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
+                            if (doc.exists) {
+                                const remoteData = doc.data().items;
+                                if (!Array.isArray(remoteData) && typeof remoteData === 'object') {
+                                     setData({ ...initialValue, ...remoteData });
+                                } else {
+                                     setData(remoteData);
+                                }
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteData));
+                            } else {
+                                // Do not overwrite automatically. Maintain read-only fail-safe status.
+                                console.log(`No data found for ${STORAGE_KEY} in cloud. Waiting for manual save.`);
+                            }
+                        }, error => {
+                            console.warn("Firestore offline mode active");
+                            dbDisabled = true;
+                        });
+                    } catch (e) { dbDisabled = true; }
+                }
+                return () => unsubscribe();
+            }, []);
+
+            const updateData = (newData) => {
+                setData(newData);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+                if (db && !dbDisabled) {
+                    db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
+                        if (err.code === 'permission-denied') {
+                            alert("Permission denied. Data saved locally only.");
+                        }
+                    });
+                }
+            };
+
+            return [data, updateData];
+        };
+
+        // --- Ext API: Fetch Hebrew Holidays ---
+        const useHebrewCalendar = () => {
+            const [holidays, setHolidays] = useState([]);
+            useEffect(() => {
+                const fetchHolidays = async () => {
+                    try {
+                        const res = await fetch(`https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&nx=on&year=now&month=x&ss=on&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                const upcoming = data.items.filter(item => {
+                                    const itemDate = new Date(item.date);
+                                    return itemDate >= new Date(new Date().setDate(new Date().getDate() - 1));
+                                }).map(item => ({
+                                    id: 'heb_' + item.date,
+                                    date: item.date,
+                                    title: item.hebrew,
+                                    type: 'holiday'
+                                }));
+                                setHolidays(upcoming.slice(0, 3));
+                            }
+                        }
+                    } catch (e) { console.error("Error fetching holidays:", e); }
+                };
+                fetchHolidays();
+                const interval = setInterval(fetchHolidays, 43200000); // Refetch every 12 hours
+                return () => clearInterval(interval);
+            }, []);
+            return holidays;
+        };
+
+        // --- Ext API: Fetch Shabbat Times ---
+        const useShabbatTimes = () => {
+            const [shabbat, setShabbat] = useState(null);
+            useEffect(() => {
+                const fetchShabbat = async () => {
+                    try {
+                        // Geonameid 293397 is Rishon LeZion
+                        const res = await fetch(`https://www.hebcal.com/shabbat?cfg=json&geonameid=293397&m=50&lg=he`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.items) {
+                                let parasha = "", candles = "", havdalah = "", candleDate = null;
+                                data.items.forEach(item => {
+                                    if (item.category === 'parashat') parasha = item.hebrew;
+                                    if (item.category === 'candles') {
+                                        candleDate = item.date; // ISO string
+                                        const date = new Date(item.date);
+                                        candles = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                    if (item.category === 'havdalah') {
+                                        const date = new Date(item.date);
+                                        havdalah = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                });
+                                // parasha might be empty during some holidays
+                                if (candles && havdalah && candleDate) {
+                                    setShabbat({ parasha: parasha || "חג שמח", candles, havdalah, candleDate });
+                                }
+                            }
+                        }
+                    } catch (e) { console.error("Error fetching shabbat times:", e); }
+                };
+                fetchShabbat();
+                const interval = setInterval(fetchShabbat, 43200000); // Refetch every 12 hours
+                return () => clearInterval(interval);
+            }, []);
+            return shabbat;
+        };
+
+        // --- Ext API: Gemini ---
+        const generateGeminiText = async (prompt, key) => {
+            if (!key) return null;
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `אתה עוזר לוועד בית. נסח הודעה רשמית וקצרה לדיירים על בסיס: '${prompt}'.` }] }]
+                    })
+                });
+                const data = await response.json();
+                if (data.candidates && data.candidates[0].content.parts[0].text) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                }
+                return null;
+            } catch (error) { return null; }
+        };
+
+        // ==========================================
+        // 3. UI COMPONENTS
+        // ==========================================
+
+        const OfflineBanner = ({ show }) => {
+            if (!show) return null;
+            return (
+                <div className="fixed top-36 left-1/2 -translate-x-1/2 bg-yellow-600 text-white px-6 py-2 rounded-full z-40 shadow-xl border-2 border-yellow-400 animate-pulse font-bold text-lg">
+                    ⚠️ עובד במצב לא מקוון
+                </div>
+            );
+        };
+
+        const BackgroundMusic = ({ enabled, volume, url, setIsBlocked }) => {
+            const audioRef = useRef(null);
+            
+            // Core Audio Manager
+            useEffect(() => {
+                const audio = audioRef.current;
+                if (audio && url) {
+                    audio.volume = volume;
+                    if (enabled) {
+                        const playPromise = audio.play();
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                if(setIsBlocked) setIsBlocked(false);
+                            }).catch(error => {
+                                if(setIsBlocked) setIsBlocked(true);
+                            });
+                        }
+                    } else {
+                        audio.pause();
+                        if(setIsBlocked) setIsBlocked(false);
+                    }
+                }
+            }, [enabled, volume, url]);
+            
+            // Watchdog Loop to enforce Autoplay constraints bypass
+            useEffect(() => {
+                const watchdog = setInterval(() => {
+                    if (enabled && url && audioRef.current && audioRef.current.paused) {
+                        audioRef.current.play().catch(e => {
+                            if(setIsBlocked) setIsBlocked(true);
+                        });
+                    }
+                }, 5000); // Pulse check every 5 seconds
+                return () => clearInterval(watchdog);
+            }, [enabled, url]);
+
+            // User gesture interceptors
+            useEffect(() => {
+                const enableSound = () => {
+                    if (audioRef.current && enabled && url) { 
+                        audioRef.current.play()
+                        .then(() => { if(setIsBlocked) setIsBlocked(false); })
+                        .catch(e => {}); 
+                    }
+                };
+                window.addEventListener('click', enableSound);
+                window.addEventListener('touchstart', enableSound);
+                return () => {
+                    window.removeEventListener('click', enableSound);
+                    window.removeEventListener('touchstart', enableSound);
+                };
+            }, [enabled, url]);
+
+            return (
+                <div className="hidden">
+                     {url && <audio ref={audioRef} src={url} loop />}
+                </div>
+            );
+        };
+
+        const Controls = ({ musicEnabled, toggleMusic, isBlocked, hasMusicUrl }) => {
+            return (
+                <div className="absolute bottom-2 left-2 z-50 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity p-2 bg-black/80 rounded-full border border-gray-700">
+                    <a href="#admin" className="text-white hover:text-yellow-400 transition p-2" title="ניהול">
+                        <SafeLucide name="settings" className="w-5 h-5" />
+                    </a>
+                    <a href="#upload" className="text-white hover:text-blue-400 transition p-2" title="העלאת תמונה">
+                        <SafeLucide name="upload-cloud" className="w-5 h-5" />
+                    </a>
+                    {hasMusicUrl && (
+                        <button 
+                            onClick={toggleMusic}
+                            className={`p-2 transition ${isBlocked ? 'text-red-500 animate-pulse font-bold' : (musicEnabled ? 'text-green-400' : 'text-red-400')}`}
+                            title={isBlocked ? "הסאונד נחסם - לחץ כאן להפעלה" : (musicEnabled ? "השתק" : "הפעל")}
+                        >
+                            <SafeLucide name={musicEnabled ? "volume-2" : "volume-x"} className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        const RedAlertSystem = () => {
+            const [alertData, setAlertData] = useState(null);
+            useEffect(() => {
+                const checkAlerts = async () => {
+                    try {
+                        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://www.oref.org.il/WarningMessages/alert/alerts.json')}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json;charset=UTF-8' }, cache: 'no-store' });
+                        const text = await res.text();
+                        if (!text || text.trim() === '') { setAlertData(null); return; }
+                        const data = JSON.parse(text);
+                        if (data && data.data && data.data.some(city => city.includes(ALERT_CITY))) {
+                            setAlertData(data.data.filter(city => city.includes(ALERT_CITY)));
+                        } else { setAlertData(null); }
+                    } catch (e) {}
+                };
+                const interval = setInterval(checkAlerts, 2000);
+                return () => clearInterval(interval);
+            }, []);
+            if (!alertData) return null;
+            return (
+                <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center text-center alert-active bg-red-600">
+                    <div className="w-32 h-32 mb-4 animate-bounce"><Icons.Alert /></div>
+                    <h1 className="text-8xl font-black text-white mt-8 mb-4 tracking-tighter drop-shadow-lg">אזעקה!</h1>
+                    <h2 className="text-5xl font-bold text-white mb-8 drop-shadow-md">היכנסו למרחב המוגן</h2>
+                    <div className="bg-white/20 backdrop-blur-md rounded-2xl p-8 border-2 border-white/50">
+                        <p className="text-3xl text-white font-bold">{alertData.join(", ")}</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const TopHeader = ({ isDark }) => {
+            const [time, setTime] = useState(new Date());
+            const [weather, setWeather] = useState(null);
+            
+            useEffect(() => {
+                const timer = setInterval(() => setTime(new Date()), 1000);
+                const fetchWeather = async () => {
+                    try {
+                        const response = await fetch("https://api.open-meteo.com/v1/forecast?latitude=31.9730&longitude=34.7925&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Asia%2FJerusalem");
+                        if (!response.ok) throw new Error("API Failed");
+                        const data = await response.json();
+                        setWeather(data);
+                    } catch (e) {}
+                };
+                fetchWeather();
+                const wTimer = setInterval(fetchWeather, 600000);
+                return () => { clearInterval(timer); clearInterval(wTimer); };
+            }, []);
+
+            const bgClass = isDark ? "bg-[#0f0f13]/80 backdrop-blur-2xl" : "bg-white/90 backdrop-blur-2xl shadow-xl border-gray-200";
+            const textClass = isDark ? "text-white drop-shadow-md" : "text-gray-900 drop-shadow-sm";
+            const subTextClass = isDark ? "text-gray-300" : "text-gray-600";
+            const cardClass = isDark ? "bg-white/5 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] backdrop-blur-xl" : "bg-gray-50 border-gray-200 shadow-sm";
+
+            return (
+                <div className={`h-32 ${bgClass} flex items-center justify-between px-8 border-b border-white/10 relative z-20 transition-all duration-500`}>
+                    <div className="flex items-center gap-6 w-1/4">
+                        <div className={`${isDark ? 'bg-white/10' : 'bg-gray-100'} p-3 rounded-2xl backdrop-blur-sm shadow-inner shrink-0`}>
+                            <img src={BUILDING_LOGO_URL} alt="Logo" className="w-16 h-16 object-contain" />
+                        </div>
+                        <div className="flex flex-col">
+                            <h1 className={`text-4xl font-black tracking-tight leading-tight bg-clip-text text-transparent bg-gradient-to-l from-blue-400 via-indigo-400 to-purple-400`} style={{fontFamily: "'Rubik', sans-serif"}}>{BUILDING_NAME}</h1>
+                            <div className="flex items-center gap-2 mt-1">
+                                <SafeLucide name="map-pin" className={`w-4 h-4 ${isDark ? 'text-blue-300' : 'text-blue-600'}`} />
+                                <h2 className={`text-xl font-medium ${subTextClass}`} style={{fontFamily: "'Rubik', sans-serif"}}>{BUILDING_ADDRESS}</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex justify-center h-full py-2">
+                        {weather && weather.current_weather ? (
+                            <div className={`flex items-center gap-8 px-10 rounded-2xl border ${cardClass} w-full max-w-6xl justify-between transition-colors duration-500`}>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 transform scale-125">
+                                        <WeatherIcon code={weather.current_weather.weathercode} />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-5xl font-bold text-yellow-500">{Math.round(weather.current_weather.temperature)}°</span>
+                                        <span className={`text-lg font-light ${subTextClass}`}>ראשון לציון</span>
+                                    </div>
+                                </div>
+                                <div className={`h-16 w-px ${isDark ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+                                <div className="flex gap-4">
+                                    {[0, 1, 2, 3, 4, 5, 6].map(i => (
+                                        <div key={i} className="flex flex-col items-center gap-1 min-w-[3.5rem]">
+                                            <span className={`text-sm font-bold ${subTextClass}`}>{weather.daily.time && weather.daily.time[i] ? getDayName(weather.daily.time[i]) : '-'}</span>
+                                            
+                                            <div className="w-8 h-8">
+                                                <WeatherIcon code={weather.daily.weathercode ? weather.daily.weathercode[i] : undefined} />
+                                            </div>
+                                            
+                                            <div className="text-sm font-mono"><span className={`font-bold ${textClass}`}>{weather.daily.temperature_2m_max && weather.daily.temperature_2m_max[i] ? Math.round(weather.daily.temperature_2m_max[i]) : '-'}°</span></div>
+                                            
+                                            <span className={`text-xs font-mono mt-1 ${subTextClass}`}>
+                                                {weather.daily.time && weather.daily.time[i] ? getDateShort(weather.daily.time[i]) : ''}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : <div className="text-xl animate-pulse text-gray-400">טוען נתונים...</div>}
+                    </div>
+                    <div className="flex flex-col items-end justify-center w-1/4">
+                        <div className={`text-[4.5rem] font-black tracking-tight leading-none mb-2 bg-clip-text text-transparent bg-gradient-to-l from-blue-400 via-indigo-400 to-purple-400`} style={{fontFamily: "'Rubik', sans-serif"}}>{time.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })}</div>
+                        <div className={`text-xl text-yellow-600 font-medium tracking-wide px-4 py-1.5 rounded-xl border ${isDark ? 'bg-black/30 border-white/10 shadow-inner' : 'bg-gray-100 border-gray-200'}`} style={{fontFamily: "'Rubik', sans-serif"}}>{time.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jerusalem' })}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const NewsTicker = () => {
+            const [news, setNews] = useState([]);
+            const [loading, setLoading] = useState(true);
+            
+            const extractTimeFromDesc = (pubDate) => {
+                 if (!pubDate) return "--:--";
+                 try {
+                     let dateStr = pubDate.replace(/-/g, '/');
+                     if (!dateStr.includes("GMT") && !dateStr.includes("UTC") && !dateStr.includes("+")) {
+                         const d = new Date(dateStr);
+                         d.setHours(d.getHours() + 2);
+                         const hours = d.getHours().toString().padStart(2, '0');
+                         const minutes = d.getMinutes().toString().padStart(2, '0');
+                         return `${hours}:${minutes}`;
+                     }
+                     const d = new Date(dateStr);
+                     return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
+                 } catch(e) { return "--:--"; }
+            };
+
+            useEffect(() => {
+                const fetchNews = async () => {
+                    try {
+                        const timestamp = new Date().getTime();
+                        const targetUrl = `https://www.ynet.co.il/Integration/StoryRss1854.xml?t=${timestamp}`;
+                        
+                        const sources = [
+                            { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'xml' },
+                            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'xml' },
+                            { url: `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}&rand=${timestamp}`, type: 'json' }
+                        ];
+
+                        let success = false;
+
+                        for (var i = 0; i < sources.length; i++) {
+                            const source = sources[i];
+                            try {
+                                const res = await fetch(source.url);
+                                if (!res.ok) continue;
+
+                                if (source.type === 'json') {
+                                    const data = await res.json();
+                                    if (data.status === 'ok' && data.items && data.items.length > 0) {
+                                        const formatted = data.items.map(item => ({
+                                            title: item.title,
+                                            time: extractTimeFromDesc(item.pubDate)
+                                        }));
+                                        setNews(formatted);
+                                        localStorage.setItem("cachedNews", JSON.stringify(formatted));
+                                        success = true;
+                                        break;
+                                    }
+                                } else { 
+                                    const text = await res.text();
+                                    if (!text.includes("rss") && !text.includes("xml")) continue;
+                                    const parser = new DOMParser();
+                                    const xmlDoc = parser.parseFromString(text, "text/xml");
+                                    const items = Array.from(xmlDoc.querySelectorAll("item"));
+                                    if (items.length > 0) {
+                                        const formatted = items.map(item => {
+                                            const title = item.querySelector("title") ? item.querySelector("title").textContent : "";
+                                            const pubDate = item.querySelector("pubDate") ? item.querySelector("pubDate").textContent : "";
+                                            return { title: title, time: extractTimeFromDesc(pubDate) };
+                                        });
+                                        setNews(formatted);
+                                        localStorage.setItem("cachedNews", JSON.stringify(formatted));
+                                        success = true;
+                                        break;
+                                    }
+                                }
+                            } catch (e) { }
+                        }
+
+                        if (!success) {
+                            const cached = localStorage.getItem("cachedNews");
+                            if (cached) setNews(JSON.parse(cached));
+                            else setNews([{ title: "עדכון חדשות נכשל זמנית", time: "--:--" }]);
+                        }
+                        setLoading(false);
+                    } catch (e) { setLoading(false); }
+                };
+
+                fetchNews();
+                const interval = setInterval(fetchNews, 120000);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="fixed bottom-0 left-0 w-full bg-red-700 text-white h-16 flex items-center z-50 border-t-4 border-red-900 shadow-2xl overflow-hidden">
+                    <div className="bg-red-900 h-full px-4 flex items-center z-20 shadow-[5px_0_15px_rgba(0,0,0,0.3)] whitespace-nowrap shrink-0">
+                        <img src={NEWS_LOGO_URL} alt="YNET" className="h-8 brightness-0 invert" />
+                    </div>
+                    <div className="flex-1 overflow-hidden relative h-full flex items-center bg-red-700">
+                        <div className="whitespace-nowrap absolute" style={{ animation: 'ticker 300s linear infinite', paddingLeft: '100%' }}>
+                            <span className="text-2xl font-medium px-4 inline-block">
+                                {loading ? "טוען מבזקים..." : news.map((item, idx) => (
+                                    <span key={idx} className="mx-6"><span className="text-yellow-300 font-mono text-xl ml-2 font-bold">({item.time})</span>{item.title}  • </span>
+                                ))}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ImageSlideshow = ({ slides, isDark }) => {
+            const [currentSlide, setCurrentSlide] = useState(0);
+            const approvedSlides = slides.filter(s => s.status === 'approved');
+            
+            useEffect(() => {
+                if (approvedSlides.length === 0) return;
+                const interval = setInterval(() => {
+                    setCurrentSlide((prev) => (prev + 1) % approvedSlides.length);
+                }, 8000);
+                return () => clearInterval(interval);
+            }, [approvedSlides.length]);
+
+            if (approvedSlides.length === 0) return <div className={`w-full h-full rounded-[2.5rem] flex items-center justify-center ${isDark ? 'bg-white/5 text-gray-500 border border-white/10' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>אין תמונות להצגה</div>;
+
+            return (
+                <div className={`relative w-full h-full rounded-[2.5rem] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border ${isDark ? 'border-white/10 bg-[#0f0f13]' : 'border-gray-200 bg-white'} group transition-all duration-500`}>
+                    {approvedSlides.map((slide, index) => (
+                        <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}>
+                            <img src={slide.url} className={`w-full h-full object-contain ${isDark ? 'bg-black' : 'bg-white'}`} />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const CarouselBoard = ({ messages, community, events, qrCodes, isDark }) => {
+            const [tab, setTab] = useState(0); 
+            const holidays = useHebrewCalendar();
+            const shabbat = useShabbatTimes();
+
+            const approvedCommunity = (community || []).filter(c => c.status === 'approved');
+            const allEvents = [...(events || []), ...holidays].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const hasCommunity = approvedCommunity.length > 0;
+            
+            // Logic to determine if Shabbat widget should show (2 days before or during)
+            let hasShabbat = false;
+            if (shabbat && shabbat.candleDate) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const cDate = new Date(shabbat.candleDate);
+                cDate.setHours(0, 0, 0, 0);
+                const diffDays = Math.round((cDate - today) / (1000 * 60 * 60 * 24));
+                // diffDays <= 2 means Wednesday(2), Thursday(1), Friday(0)
+                // diffDays >= -1 means Saturday(-1)
+                if (diffDays <= 2 && diffDays >= -1) {
+                    hasShabbat = true;
+                }
+            }
+            
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setTab(prev => {
+                        let next = prev + 1;
+                        if (next === 1 && !hasCommunity) next = 2;
+                        if (next === 3 && !hasShabbat) next = 0;
+                        if (next > 3) next = 0;
+                        return next;
+                    });
+                }, 15000); 
+                return () => clearInterval(interval);
+            }, [hasCommunity, hasShabbat]);
+
+            const isEventToday = (dateStr) => {
+                const today = new Date().toISOString().split('T')[0];
+                return dateStr.startsWith(today);
+            };
+
+            const bgClass = isDark ? "bg-black/40 backdrop-blur-2xl border-white/10" : "bg-white/80 backdrop-blur-2xl border-gray-200";
+            const textClass = isDark ? "text-white drop-shadow-md" : "text-gray-900 drop-shadow-sm";
+            const subTextClass = isDark ? "text-gray-300" : "text-gray-600";
+            const cardBgClass = isDark ? "bg-white/10 hover:bg-white/15 border-white/5" : "bg-white hover:bg-gray-50 shadow-sm";
+
+            return (
+                <div className={`${bgClass} rounded-[2.5rem] p-6 h-full border flex flex-col shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] relative transition-all duration-500`}>
+                    <div className={`flex items-center gap-4 mb-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'} pb-3 shrink-0 h-14`}>
+                        {tab === 0 && <React.Fragment><div className="w-8 h-8 text-yellow-500 animate-bounce"><Icons.Bell /></div><h2 className={`text-2xl font-bold ${textClass}`}>הודעות ועד הבית</h2></React.Fragment>}
+                        {tab === 1 && <React.Fragment><SafeLucide name="hand-heart" className="w-8 h-8 text-pink-500" /><h2 className={`text-2xl font-bold ${textClass}`}>לוח קהילה</h2></React.Fragment>}
+                        {tab === 2 && <React.Fragment><SafeLucide name="calendar" className="w-8 h-8 text-blue-500" /><h2 className={`text-2xl font-bold ${textClass}`}>אירועים קרובים</h2></React.Fragment>}
+                        {tab === 3 && <React.Fragment><SafeLucide name="star" className="w-8 h-8 text-blue-400" /><h2 className={`text-2xl font-bold ${textClass}`}>זמני שבת וחג</h2></React.Fragment>}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar mb-2 pr-2">
+                        {tab === 0 && messages.map((msg) => (
+                            <div key={msg.id} className={`${cardBgClass} p-3 rounded-xl border-r-4 border-yellow-500 mb-3 animate-in fade-in slide-in-from-right-4 duration-500`}>
+                                <h3 className="text-xl font-bold text-yellow-600 mb-1">{msg.title}</h3>
+                                <p className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-lg leading-relaxed`}>{msg.content}</p>
+                            </div>
+                        ))}
+
+                        {tab === 1 && approvedCommunity.map((item) => {
+                            const tagStyle = getCommunityTag(item.type);
+                            const borderClass = isDark ? '' : tagStyle.class.split(' ').pop().replace('text', 'border');
+
+                            return (
+                                <div key={item.id} className={`${cardBgClass} p-4 rounded-xl border-r-4 ${isDark ? (item.type === 'give' ? 'border-green-500' : 'border-purple-500') : borderClass} mb-3 animate-in fade-in slide-in-from-right-4 duration-500`}>
+                                    <div className="flex justify-between">
+                                        <span className={`text-sm font-bold px-2 py-0.5 rounded border ${tagStyle.class}`}>
+                                            {tagStyle.text}
+                                        </span>
+                                        <span className={`text-sm ${subTextClass}`}>{item.date}</span>
+                                    </div>
+                                    <h3 className={`text-xl font-bold ${textClass} mt-1`}>{item.content}</h3>
+                                    <p className={`${subTextClass} text-base mt-1`}>{item.contact}</p>
+                                </div>
+                            );
+                        })}
+
+                        {tab === 2 && (
+                            <div className="space-y-3">
+                                {allEvents.length === 0 && <div className={`text-center ${subTextClass} mt-10`}>אין אירועים קרובים</div>}
+                                {allEvents.map((evt) => (
+                                    <div key={evt.id} className={`flex items-center gap-4 ${cardBgClass} p-3 rounded-xl border ${isDark ? 'border-gray-700' : 'border-gray-200'} animate-in fade-in slide-in-from-right-4 duration-500 ${isEventToday(evt.date) ? 'event-today' : ''}`}>
+                                        <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg ${evt.type === 'holiday' ? 'bg-blue-100 text-blue-600' : (isDark ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800')}`}>
+                                            <span className="text-2xl font-bold leading-none">{new Date(evt.date).getDate()}</span>
+                                            <span className="text-xs">{new Date(evt.date).toLocaleDateString('he-IL', { month: 'short' })}</span>
+                                        </div>
+                                        <div>
+                                            <h3 className={`font-bold text-xl ${textClass}`}>{evt.title}</h3>
+                                            <p className={`text-sm ${subTextClass}`}>{evt.type === 'holiday' ? 'חג/מועד' : 'אירוע בניין'}</p>
+                                        </div>
+                                        {isEventToday(evt.date) && <span className="mr-auto bg-yellow-500 text-black text-sm font-bold px-2 py-1 rounded-full animate-pulse">היום!</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {tab === 3 && shabbat && (
+                            <div className={`flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-500 text-center justify-center items-center rounded-2xl ${isDark ? 'bg-gradient-to-br from-blue-900/40 to-purple-900/40 border border-blue-500/30' : 'bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200'} p-3`}>
+                                <div className="text-4xl mb-2">✨</div>
+                                <h3 className={`text-3xl font-black mb-2 ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>שבת שלום</h3>
+                                <div className={`text-xl font-bold mb-6 px-5 py-2 rounded-full ${isDark ? 'bg-blue-500/20 text-blue-200' : 'bg-blue-200 text-blue-800'}`}>
+                                    {shabbat.parasha}
+                                </div>
+                                
+                                <div className="flex w-full justify-around mt-2">
+                                    <div className="flex flex-col items-center">
+                                        <span className={`text-sm mb-1 ${subTextClass}`}>כניסת שבת</span>
+                                        <span className={`text-5xl font-bold ${textClass}`}>{shabbat.candles}</span>
+                                    </div>
+                                    <div className={`w-px h-16 ${isDark ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+                                    <div className="flex flex-col items-center">
+                                        <span className={`text-sm mb-1 ${subTextClass}`}>צאת שבת</span>
+                                        <span className={`text-5xl font-bold ${textClass}`}>{shabbat.havdalah}</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex gap-6 mt-8 opacity-80 text-4xl">
+                                    <span>📖</span>
+                                    <span>🕯️</span>
+                                    <span>🍷</span>
+                                    <span>🍞</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Rigid Geometry added for QR codes to prevent flexbox collapse */}
+                    <div className={`mt-auto pt-3 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+                        <div className="flex justify-center gap-3">
+                            {qrCodes.map((qr) => (
+                                <div key={qr.id} className="bg-white p-1 rounded-md flex flex-col items-center justify-center gap-0.5 shadow-lg w-[18%] shrink-0 min-w-[45px]">
+                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(qr.link)}`} className="w-full aspect-square object-contain mix-blend-multiply shrink-0" />
+                                    <span className="text-black font-bold text-[7px] text-center leading-tight truncate w-full">{qr.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const BuildingStatus = ({ items, isDark }) => {
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+            const currentDay = new Date().getDay(); 
+
+            useEffect(() => {
+                const handleStatus = () => setIsOnline(navigator.onLine);
+                window.addEventListener('online', handleStatus);
+                window.addEventListener('offline', handleStatus);
+                return () => {
+                    window.removeEventListener('online', handleStatus);
+                    window.removeEventListener('offline', handleStatus);
+                };
+            }, []);
+
+            const daysMap = { 0: "א'", 1: "ב'", 2: "ג'", 3: "ד'", 4: "ה'", 5: "ו'", 6: "שבת" };
+
+            const getStatusDisplay = (item) => {
+                if (item.type === "system") { 
+                    return {
+                        isActive: isOnline,
+                        label: item.label,
+                        statusText: isOnline ? "מחובר" : "מנותק",
+                        colorClass: isOnline ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    };
+                }
+                
+                if (item.type === "schedule") { 
+                    const isToday = item.days && item.days.includes(currentDay);
+                    let text = isToday ? "היום" : "בימים ";
+                    
+                    if (!isToday && item.days) {
+                         text += item.days.map(d => daysMap[d]).join(', ');
+                    }
+                    
+                    return {
+                        isActive: isToday,
+                        label: item.label,
+                        statusText: text,
+                        colorClass: isToday ? "bg-green-100 text-green-600" : (isDark ? "bg-gray-700 text-gray-500" : "bg-gray-200 text-gray-500")
+                    };
+                }
+                
+                return {
+                    isActive: item.active,
+                    label: item.label,
+                    statusText: item.text || (item.active ? "תקין" : "בטיפול"),
+                    colorClass: item.active ? "bg-green-100 text-green-600" : "bg-orange-100 text-orange-600"
+                };
+            };
+
+            const bgClass = isDark ? "bg-gray-800/90 border-gray-700" : "bg-white/90 border-gray-200 shadow-xl";
+            const textClass = isDark ? "text-white" : "text-gray-900";
+            const subTextClass = isDark ? "text-gray-200" : "text-gray-600";
+
+            return (
+                <div className={`${bgClass} rounded-3xl p-6 h-full border flex flex-col transition-colors duration-500`}>
+                    <div className={`flex items-center gap-3 mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} pb-2`}>
+                        <SafeLucide name="info" className="text-blue-500 w-6 h-6" />
+                        <h2 className={`text-xl font-bold ${textClass}`}>היום בבניין</h2>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 h-full content-center">
+                        {items.map((item) => {
+                            const display = getStatusDisplay(item);
+                            return (
+                                <div key={item.id} className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${display.isActive ? (isDark ? 'bg-gray-700/50 border-green-500/30' : 'bg-green-50 border-green-200') : (isDark ? 'bg-gray-800/30 border-gray-700' : 'bg-white border-gray-100')} text-center transition-all`}>
+                                    <div className={`p-2 rounded-full mb-2 ${display.colorClass}`}>
+                                        <SafeLucide name={item.icon} className="w-6 h-6" />
+                                    </div>
+                                    <span className={`text-sm font-bold ${subTextClass} mb-1`}>{display.label}</span>
+                                    <span className={`text-xs ${display.isActive ? 'text-green-600 font-bold' : 'text-gray-500'}`}>{display.statusText}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const UploadView = ({ slides, community, onUploadSlides, onUploadCommunity }) => {
+            const [tab, setTab] = useState('image'); // 'image' or 'community'
+            const [file, setFile] = useState(null);
+            const [textData, setTextData] = useState({ type: 'give', content: '', contact: '' });
+            const [loading, setLoading] = useState(false);
+            const [message, setMessage] = useState("");
+
+            const handleFileChange = (e) => {
+                const selected = e.target.files[0];
+                if (selected) {
+                    if (selected.size > 5000000) { 
+                        alert("הקובץ גדול מדי. נא להעלות תמונה עד 5MB");
+                        return;
+                    }
+                    setFile(selected);
+                }
+            };
+
+            const handleSubmitImage = (e) => {
+                e.preventDefault();
+                if (!file) return;
+                setLoading(true);
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    onUploadSlides([...slides, { id: Date.now(), url: reader.result, status: 'pending', date: new Date().toLocaleDateString() }]);
+                    setLoading(false); setFile(null); setMessage("התמונה נשלחה לאישור הוועד! תודה רבה."); setTimeout(() => setMessage(""), 5000);
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleSubmitCommunity = (e) => {
+                e.preventDefault();
+                if (!textData.content) return;
+                const newItem = {
+                    id: Date.now(),
+                    ...textData,
+                    status: 'pending',
+                    date: new Date().toLocaleDateString()
+                };
+                onUploadCommunity([...(community || []), newItem]);
+                setTextData({ type: 'give', content: '', contact: '' });
+                setMessage("המודעה נשלחה לאישור הוועד! תודה רבה."); setTimeout(() => setMessage(""), 5000);
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center justify-center font-sans">
+                    <a href="#" onClick={(e) => { e.preventDefault(); window.location.href = window.location.pathname; }} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition z-10 shadow-lg">
+                         <SafeLucide name="arrow-right" className="w-6 h-6 text-white" />
+                    </a>
+
+                    <div className="w-full max-w-md space-y-6">
+                        <div className="text-center">
+                            <div className="relative inline-block">
+                                <img src={BUILDING_LOGO_URL} className="w-24 h-24 mx-auto rounded-full bg-white p-2 object-contain shadow-2xl border-4 border-gray-800" />
+                                <div className="absolute bottom-0 right-0 bg-green-500 rounded-full p-1.5 border-2 border-gray-900">
+                                    <SafeLucide name="check" className="w-4 h-4 text-white" />
+                                </div>
+                            </div>
+                            <h1 className="text-3xl font-bold mt-4 text-white tracking-wide">{BUILDING_NAME}</h1>
+                            <p className="text-gray-400 text-sm mt-1">מערכת שיתוף דיירים</p>
+                        </div>
+
+                        <div className="bg-gray-800 p-6 rounded-3xl shadow-2xl border border-gray-700 relative overflow-hidden">
+                            <div className="flex bg-gray-900/50 p-1.5 rounded-xl mb-6 relative">
+                                <button onClick={() => setTab('image')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'image' ? 'bg-blue-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}>
+                                    <SafeLucide name="image" className="w-4 h-4" /> תמונה למסך
+                                </button>
+                                <button onClick={() => setTab('community')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${tab === 'community' ? 'bg-purple-600 text-white shadow-lg transform scale-105' : 'text-gray-400 hover:text-gray-200'}`}>
+                                    <SafeLucide name="message-circle" className="w-4 h-4" /> לוח קהילה
+                                </button>
+                            </div>
+
+                            {message && (
+                                <div className="bg-green-500/20 border border-green-500/50 text-green-300 p-4 rounded-xl text-center mb-6 animate-pulse flex items-center justify-center gap-2">
+                                    <SafeLucide name="check-circle" className="w-5 h-5" />
+                                    <span className="font-bold">{message}</span>
+                                </div>
+                            )}
+
+                            {tab === 'image' ? (
+                                <form onSubmit={handleSubmitImage} className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="border-2 border-dashed border-gray-600 hover:border-blue-500 hover:bg-gray-700/30 rounded-2xl p-8 text-center relative transition-all group cursor-pointer">
+                                        <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full z-10 cursor-pointer" required />
+                                        {file ? (
+                                            <div className="flex flex-col items-center">
+                                                <div className="w-16 h-16 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition">
+                                                    <SafeLucide name="check" className="w-8 h-8" />
+                                                </div>
+                                                <span className="text-white font-bold text-lg truncate w-full px-2">{file.name}</span>
+                                                <span className="text-xs text-gray-400 mt-1">לחץ להחלפה</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col items-center">
+                                                <div className="w-16 h-16 bg-gray-700 text-gray-400 rounded-full flex items-center justify-center mb-3 group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
+                                                    <SafeLucide name="upload-cloud" className="w-8 h-8" />
+                                                </div>
+                                                <span className="text-gray-300 font-bold">לחצו לבחירת תמונה</span>
+                                                <span className="text-xs text-gray-500 mt-1">מקסימום 5MB</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button disabled={loading} className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2">
+                                        {loading ? <SafeLucide name="loader-2" className="w-5 h-5 animate-spin" /> : <SafeLucide name="send" className="w-5 h-5" />}
+                                        {loading ? "מעלה..." : "שלח לאישור"}
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleSubmitCommunity} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 mr-1">סוג המודעה</label>
+                                        <div className="relative">
+                                            <select value={textData.type} onChange={e => setTextData({...textData, type: e.target.value})} className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white appearance-none focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none">
+                                                <option value="give">🎁 למסירה (חפצים/ריהוט)</option>
+                                                <option value="sale">💰 למכירה</option>
+                                                <option value="donate">❤️ לתרומה</option>
+                                                <option value="lost">🔍 אבידות ומציאות</option>
+                                            </select>
+                                            <div className="absolute left-3 top-3.5 text-gray-400 pointer-events-none">
+                                                <SafeLucide name="chevron-down" className="w-5 h-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 mr-1">תוכן המודעה</label>
+                                        <textarea value={textData.content} onChange={e => setTextData({...textData, content: e.target.value})} placeholder="לדוגמה: למסירה שולחן סלון במצב מצוין..." className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none" rows="3" required />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 mr-1">פרטי קשר (יופיעו על המסך)</label>
+                                        <div className="relative">
+                                            <input value={textData.contact} onChange={e => setTextData({...textData, contact: e.target.value})} placeholder="שם וטלפון / מספר דירה" className="w-full bg-gray-900 border border-gray-600 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none" required />
+                                            <div className="absolute left-3 top-3 text-gray-500">
+                                                <SafeLucide name="phone" className="w-5 h-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button className="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
+                                        <SafeLucide name="send" className="w-5 h-5" />
+                                        פרסם מודעה
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                        <div className="text-center text-xs text-gray-500 mt-8">© {new Date().getFullYear()} {BUILDING_NAME}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminView = ({ data, onUpdate }) => {
+            const [auth, setAuth] = useState(false);
+            const [pass, setPass] = useState("");
+            
+            const [settings, setSettings] = useState(data.settings);
+            const [messages, setMessages] = useState(data.messages);
+            const [status, setStatus] = useState(data.status);
+            const [slides, setSlides] = useState(data.slides);
+            const [community, setCommunity] = useState(data.community || []);
+            const [events, setEvents] = useState(data.events || []);
+            const [qrCodes, setQrCodes] = useState(data.qrCodes);
+
+            const [uploadingAudio, setUploadingAudio] = useState(false);
+            const [uploadProgress, setUploadProgress] = useState(0);
+
+            const handleAudioUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                if (!storage) {
+                    alert("Firebase Storage אינו מוגדר או זמין.");
+                    return;
+                }
+
+                if (file.size > 20 * 1024 * 1024) { 
+                    alert("הקובץ גדול מדי. נא להעלות שיר עד 20MB.");
+                    return;
+                }
+
+                try {
+                    setUploadingAudio(true);
+                    setUploadProgress(0);
+
+                    const fileExt = file.name.split('.').pop() || 'mp3';
+                    const cleanName = 'bg_music_' + Date.now() + '.' + fileExt;
+                    const storageRef = storage.ref().child('audio/' + cleanName);
+                    
+                    const uploadTask = storageRef.put(file);
+
+                    uploadTask.on('state_changed', 
+                        function(snapshot) {
+                            const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                            setUploadProgress(progress);
+                        }, 
+                        function(error) {
+                            console.error("Audio upload error:", error);
+                            alert("שגיאה בהעלאת הקובץ: " + error.message);
+                            setUploadingAudio(false);
+                        }, 
+                        function() {
+                            uploadTask.snapshot.ref.getDownloadURL().then(function(downloadUrl) {
+                                updateSettings('musicUrl', downloadUrl);
+                                updateSettings('musicEnabled', true);
+                                setUploadingAudio(false);
+                                alert("שיר הרקע הועלה בהצלחה!");
+                            }).catch(function(err) {
+                                console.error(err);
+                                alert("שגיאה בקבלת קישור ההורדה");
+                                setUploadingAudio(false);
+                            });
+                        }
+                    );
+                } catch (err) {
+                    console.error(err);
+                    alert("שגיאה בהעלאה");
+                    setUploadingAudio(false);
+                }
+            };
+
+            const addMessage = () => {
+                const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
+                setMessages([...messages, { id: newId, title: "הודעה חדשה", content: "" }]);
+            };
+            
+            const removeMessage = (id) => {
+                setMessages(messages.filter(m => m.id !== id));
+            };
+
+            const toggleDay = (itemId, dayIndex) => {
+                setStatus(status.map(s => {
+                    if (s.id !== itemId) return s;
+                    const days = s.days || [];
+                    if (days.includes(dayIndex)) {
+                        return { ...s, days: days.filter(d => d !== dayIndex) };
+                    } else {
+                        return { ...s, days: [...days, dayIndex].sort() };
+                    }
+                }));
+            };
+
+            const updateManualStatus = (id, field, val) => {
+                setStatus(status.map(s => s.id === id ? { ...s, [field]: val } : s));
+            };
+
+            const approveSlide = (id) => {
+                setSlides(slides.map(s => s.id === id ? { ...s, status: 'approved' } : s));
+            };
+
+            const deleteSlide = (id) => {
+                setSlides(slides.filter(s => s.id !== id));
+            };
+
+            const approveCommunity = (id) => {
+                setCommunity(community.map(c => c.id === id ? { ...c, status: 'approved' } : c));
+            };
+
+            const deleteCommunity = (id) => {
+                setCommunity(community.filter(c => c.id !== id));
+            };
+
+            const addEvent = () => {
+                const newId = events.length > 0 ? Math.max(...events.map(e => e.id)) + 1 : 1;
+                setEvents([...events, { id: newId, title: "אירוע חדש", date: new Date().toISOString().split('T')[0], type: 'event' }]);
+            };
+
+            const updateEvent = (id, field, value) => {
+                setEvents(events.map(e => e.id === id ? { ...e, [field]: value } : e));
+            };
+
+            const deleteEvent = (id) => {
+                setEvents(events.filter(e => e.id !== id));
+            };
+
+            const updateMessage = (id, field, value) => {
+                setMessages(messages.map(m => m.id === id ? { ...m, [field]: value } : m));
+            };
+            
+            const updateQr = (id, field, value) => {
+                setQrCodes(qrCodes.map(q => q.id === id ? { ...q, [field]: value } : q));
+            };
+            
+            const updateSettings = (key, value) => {
+                setSettings({ ...settings, [key]: value });
+            };
+            
+            const [aiLoading, setAiLoading] = useState(null); 
+
+            const handleAiRewrite = async (msgId, text) => {
+                if (!text || text.length < 3) return;
+                const key = settings.geminiKey;
+                if (!key) {
+                    alert("נא להגדיר מפתח Gemini API בהגדרות המערכת תחילה.");
+                    return;
+                }
+                setAiLoading(msgId);
+                const newText = await generateGeminiText(text, key);
+                setAiLoading(null);
+                if (newText) {
+                    updateMessage(msgId, 'content', newText);
+                } else {
+                    alert("שגיאה ביצירת תוכן.");
+                }
+            };
+
+            const handleSave = () => {
+                onUpdate({ settings, messages, status, slides, qrCodes, community, events });
+                alert("הנתונים נשמרו בהצלחה!");
+            };
+            
+            const handleBack = (e) => {
+                e.preventDefault();
+                window.location.href = window.location.pathname; 
+            };
+
+            if (!auth) {
+                return (
+                    <div className="min-h-screen bg-black flex items-center justify-center p-4 font-sans">
+                        <a href="#" onClick={handleBack} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full hover:bg-gray-700 transition">
+                            <SafeLucide name="arrow-right" className="w-6 h-6 text-white" />
+                        </a>
+                        <div className="bg-gray-900 p-8 rounded-2xl border border-gray-700 w-full max-w-sm text-center">
+                            <h2 className="text-xl text-white font-bold mb-4">כניסת ועד</h2>
+                            <input 
+                                type="password" 
+                                placeholder="סיסמה" 
+                                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 mb-4 text-center"
+                                value={pass}
+                                onChange={e => setPass(e.target.value)}
+                            />
+                            <button 
+                                onClick={() => pass === ADMIN_PASSWORD ? setAuth(true) : alert("סיסמה שגויה")}
+                                className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg"
+                            >
+                                כניסה
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const pendingSlides = slides.filter(s => s.status === 'pending');
+            const approvedSlides = slides.filter(s => s.status === 'approved');
+            const pendingCommunity = community.filter(c => c.status === 'pending');
+            const approvedCommunity = community.filter(c => c.status === 'approved');
+            const daysNames = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+
+            return (
+                <div className="h-screen page-admin text-white p-4 font-sans dir-rtl">
+                    <header className="flex justify-between items-center mb-8 bg-gray-800 p-4 rounded-xl sticky top-0 z-50 shadow-lg">
+                         <div className="flex items-center gap-4">
+                            <a href="#" onClick={handleBack} className="bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition">
+                                <SafeLucide name="arrow-right" className="w-5 h-5" />
+                            </a>
+                            <h1 className="text-2xl font-bold text-yellow-400">ניהול מסך לובי</h1>
+                        </div>
+                        <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
+                            <SafeLucide name="save" className="w-4 h-4" /> שמור שינויים
+                        </button>
+                    </header>
+
+                    <div className="max-w-4xl mx-auto space-y-8 pb-20">
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <SafeLucide name="settings" className="w-5 h-5" /> הגדרות מערכת
+                            </h2>
+                            <div className="grid gap-4">
+                                <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold">ערכת נושא</span>
+                                        <span className="text-xs text-gray-400">בחר את מראה המסך</span>
+                                    </div>
+                                    <select 
+                                        value={settings.theme || 'dark'}
+                                        onChange={(e) => updateSettings('theme', e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    >
+                                        <option value="dark">כהה (מומלץ)</option>
+                                        <option value="light">בהיר</option>
+                                        <option value="auto">אוטומטי (בהיר ביום, כהה בלילה)</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center justify-between bg-gray-700/50 p-4 rounded-xl">
+                                    <span className="font-bold">מוזיקת רקע</span>
+                                    <button 
+                                        onClick={() => updateSettings('musicEnabled', !settings.musicEnabled)}
+                                        className={`w-14 h-8 rounded-full relative transition ${settings.musicEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                    >
+                                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${settings.musicEnabled ? 'right-1' : 'right-7'}`}></div>
+                                    </button>
+                                </div>
+                                <div className="bg-gray-700/50 p-4 rounded-xl space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-sm font-bold">קובץ שיר רקע (MP3)</label>
+                                        {settings.musicUrl && (
+                                            <span className="text-xs text-green-400 font-bold">✓ מוגדר שיר</span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer transition ${uploadingAudio ? 'bg-gray-800 border-yellow-500 text-yellow-400' : 'bg-gray-900 border-gray-600 hover:border-blue-500 text-white'}`}>
+                                            <SafeLucide name={uploadingAudio ? "loader-2" : "upload-cloud"} className={`w-5 h-5 ${uploadingAudio ? 'animate-spin' : ''}`} />
+                                            <span className="text-sm font-bold">
+                                                {uploadingAudio ? `מעלה שיר... (${uploadProgress}%)` : "בחר קובץ MP3 להעלאה"}
+                                            </span>
+                                            <input 
+                                                type="file" 
+                                                accept="audio/mp3,audio/*" 
+                                                onChange={handleAudioUpload} 
+                                                disabled={uploadingAudio}
+                                                className="hidden" 
+                                            />
+                                        </label>
+                                        
+                                        {settings.musicUrl && (
+                                            <button 
+                                                type="button"
+                                                onClick={() => updateSettings('musicUrl', '')}
+                                                className="bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white p-3 rounded-xl text-xs transition"
+                                                title="הסר שיר"
+                                            >
+                                                <SafeLucide name="trash-2" className="w-5 h-5" />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {settings.musicUrl && (
+                                        <div className="pt-2">
+                                            <audio controls src={settings.musicUrl} className="w-full h-8" />
+                                        </div>
+                                    )}
+
+                                    <details className="text-xs text-gray-400 pt-1">
+                                        <summary className="cursor-pointer hover:text-gray-200">או הזן קישור ידני ישיר (URL)</summary>
+                                        <input 
+                                            value={settings.musicUrl || ""}
+                                            onChange={(e) => updateSettings('musicUrl', e.target.value)}
+                                            className="bg-gray-900 border border-gray-600 rounded p-2 text-xs flex-1 text-left dir-ltr w-full mt-2"
+                                            placeholder="https://.../song.mp3"
+                                        />
+                                    </details>
+                                </div>
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <div className="flex justify-between mb-2">
+                                        <label className="text-sm font-bold">עוצמת שמע</label>
+                                        <span className="text-xs text-yellow-400">{Math.round((settings.volume || 0.15) * 100)}%</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="0" max="1" step="0.05"
+                                        value={settings.volume || 0.15}
+                                        onChange={(e) => updateSettings('volume', parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                    />
+                                </div>
+                                <div className="bg-gray-700/50 p-4 rounded-xl">
+                                    <label className="block text-sm font-bold mb-2">Gemini API Key (עבור שכתוב הודעות)</label>
+                                    <input 
+                                        type="password"
+                                        value={settings.geminiKey || ""}
+                                        onChange={(e) => updateSettings('geminiKey', e.target.value)}
+                                        placeholder="הדבק כאן את המפתח..."
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm"
+                                    />
+                                </div>
+                            </div>
+                        </section>
+
+                        {(pendingSlides.length > 0 || pendingCommunity.length > 0) && (
+                            <section className="bg-gray-800 p-6 rounded-2xl border border-yellow-500/50">
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-yellow-400">
+                                    <SafeLucide name="check-square" className="w-5 h-5" /> אישורים ממתינים
+                                </h2>
+                                <div className="space-y-4">
+                                    {pendingSlides.map(s => (
+                                        <div key={s.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                <img src={s.url} className="w-16 h-16 object-cover rounded" />
+                                                <span>תמונה חדשה</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => approveSlide(s.id)} className="bg-green-500 p-2 rounded-full"><SafeLucide name="check" className="w-4 h-4" /></button>
+                                                <button onClick={() => deleteSlide(s.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {pendingCommunity.map(c => (
+                                        <div key={c.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                            <div>
+                                                <span className="font-bold text-pink-400">{c.type === 'give' ? 'למסירה' : 'אבידה'}</span>: {c.content}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => approveCommunity(c.id)} className="bg-green-500 p-2 rounded-full"><SafeLucide name="check" className="w-4 h-4" /></button>
+                                                <button onClick={() => deleteCommunity(c.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+                        
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <SafeLucide name="image" className="w-5 h-5" /> תמונות באוויר (פעילות)
+                            </h2>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {approvedSlides.map(s => (
+                                    <div key={s.id} className="relative group">
+                                        <img src={s.url} className="w-full h-32 object-cover rounded-lg" />
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                            <button onClick={() => deleteSlide(s.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <SafeLucide name="hand-heart" className="w-5 h-5" /> מודעות קהילה פעילות
+                            </h2>
+                            <div className="space-y-3">
+                                {community.filter(c => c.status === 'approved').map(c => {
+                                    const tagStyle = getCommunityTagDark(c.type);
+                                    return (
+                                        <div key={c.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                            <div>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 border border-gray-600 ${tagStyle.class}`}>
+                                                    {tagStyle.text}
+                                                </span>
+                                                <span className="font-bold">{c.content}</span>
+                                                <span className="text-gray-400 text-xs mr-2">({c.contact})</span>
+                                            </div>
+                                            <button onClick={() => deleteCommunity(c.id)} className="bg-red-500 p-2 rounded-full"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                        </div>
+                                    );
+                                })}
+                                {community.filter(c => c.status === 'approved').length === 0 && (
+                                    <p className="text-gray-500 text-sm">אין מודעות קהילה פעילות כרגע.</p>
+                                )}
+                            </div>
+                        </section>
+                        
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><SafeLucide name="calendar" className="w-5 h-5" /> אירועים קרובים</h2>
+                                <button onClick={addEvent} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">+ אירוע</button>
+                            </div>
+                            <div className="space-y-3">
+                                {events.map(evt => (
+                                    <div key={evt.id} className="flex gap-3 items-center bg-gray-700/30 p-2 rounded-lg">
+                                        <input type="date" value={evt.date} onChange={e => updateEvent(evt.id, 'date', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2" />
+                                        <input value={evt.title} onChange={e => updateEvent(evt.id, 'title', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 flex-1" placeholder="שם האירוע" />
+                                        <button onClick={() => deleteEvent(evt.id)} className="text-red-400 p-2"><SafeLucide name="trash" className="w-4 h-4" /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="bg-gray-800 p-6 rounded-2xl">
+                            <h2 className="text-xl font-bold mb-4">סטטוסים בבניין</h2>
+                            <div className="space-y-4">
+                                {status.map(s => {
+                                    if (s.type === 'system') return null;
+                                    return (
+                                    <div key={s.id} className="bg-gray-700/30 p-4 rounded-xl border border-gray-600">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="bg-gray-600 p-2 rounded-lg"><SafeLucide name={s.icon} className="w-5 h-5" /></div>
+                                            <span className="font-bold text-lg">{s.label}</span>
+                                        </div>
+                                        {s.type === 'schedule' ? (
+                                            <div>
+                                                <p className="text-xs text-gray-400 mb-2">ימי פעילות:</p>
+                                                <div className="flex gap-2">
+                                                    {daysNames.map((d, idx) => (
+                                                        <button key={idx} onClick={() => toggleDay(s.id, idx)} className={`w-8 h-8 rounded-full text-xs font-bold transition ${s.days.includes(idx) ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-400'}`}>{d}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-4">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="checkbox" checked={s.active} onChange={(e) => updateManualStatus(s.id, 'active', e.target.checked)} className="w-5 h-5 accent-green-500" />
+                                                    <span>פעיל</span>
+                                                </label>
+                                                <input value={s.text || ""} onChange={(e) => updateManualStatus(s.id, 'text', e.target.value)} placeholder="טקסט חופשי (למשל: תקין)" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 flex-1" />
+                                            </div>
+                                        )}
+                                    </div>
+                                )})}
+                            </div>
+                        </section>
+
+                        <section className="bg-gray-800 p-6 rounded-2xl">
+                             <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><SafeLucide name="message-square" className="w-5 h-5" /> הודעות ועד</h2>
+                                <button onClick={addMessage} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">+ הודעה</button>
+                            </div>
+                            <div className="space-y-4">
+                                {messages.map(m => (
+                                    <div key={m.id} className="bg-gray-700/50 p-4 rounded-xl flex gap-4 flex-col md:flex-row relative group items-start">
+                                        <button onClick={() => removeMessage(m.id)} className="absolute top-2 left-2 text-red-400 bg-gray-900 p-1 rounded-full opacity-60 hover:opacity-100 z-10">
+                                            <SafeLucide name="trash-2" className="w-4 h-4" />
+                                        </button>
+                                        <div className="w-full flex-1">
+                                            <input value={m.title} onChange={(e) => updateMessage(m.id, 'title', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 text-yellow-400 font-bold w-full mb-2 pl-10" placeholder="כותרת" />
+                                            <div className="relative">
+                                                <textarea value={m.content} onChange={(e) => updateMessage(m.id, 'content', e.target.value)} className="bg-gray-900 border border-gray-600 rounded p-2 w-full pl-10" rows="2" placeholder="תוכן ההודעה" />
+                                                <button onClick={() => handleAiRewrite(m.id, m.content)} className={`absolute bottom-2 left-2 p-1 rounded-full hover:bg-purple-600/50 text-purple-400 transition ${aiLoading === m.id ? 'animate-spin' : ''}`} title="שכתב עם AI">
+                                                    {aiLoading === m.id ? <SafeLucide name="loader-2" className="w-5 h-5" /> : <SafeLucide name="sparkles" className="w-5 h-5" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <SafeLucide name="qr-code" className="w-5 h-5" /> ניהול ברקודים (QR)
+                            </h2>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {qrCodes.map(qr => (
+                                    <div key={qr.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
+                                        <div className="mb-2">
+                                            <label className="text-xs text-gray-400 font-bold">כותרת</label>
+                                            <input value={qr.label} onChange={(e) => updateQr(qr.id, 'label', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-yellow-400 font-bold" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-400 font-bold">קישור (URL)</label>
+                                            <input value={qr.link} onChange={(e) => updateQr(qr.id, 'link', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        const App = () => {
+            const [view, setView] = useState('display'); 
+            const [settings, setSettings] = useData('settings', INITIAL_DATA.settings);
+            const [messages, setMessages] = useData('messages', INITIAL_DATA.messages);
+            const [community, setCommunity] = useData('community', []);
+            const [events, setEvents] = useData('events', []);
+            const [status, setStatus] = useData('status', INITIAL_DATA.status);
+            const [slides, setSlides] = useData('slides', INITIAL_DATA.slides);
+            const [qrCodes, setQrCodes] = useData('qrCodes', INITIAL_DATA.qrCodes);
+
+            // Theme Logic
+            const [isDark, setIsDark] = useState(true);
+            useEffect(() => {
+                const checkTheme = () => {
+                    const theme = settings.theme || 'dark';
+                    if (theme === 'auto') {
+                        setIsDark(isNightTime());
+                    } else {
+                        setIsDark(theme === 'dark');
+                    }
+                };
+                checkTheme();
+                const interval = setInterval(checkTheme, 60000); 
+                return () => clearInterval(interval);
+            }, [settings.theme]);
+
+            // Pixel Shift Logic
+            const [shift, setShift] = useState({ x: 0, y: 0 });
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setShift({
+                        x: Math.floor(Math.random() * 4) - 2, 
+                        y: Math.floor(Math.random() * 4) - 2
+                    });
+                }, 60000); 
+                return () => clearInterval(interval);
+            }, []);
+
+            // Routing
+            useEffect(() => {
+                const handleHash = () => {
+                    const h = window.location.hash;
+                    if (h === '#admin') setView('admin');
+                    else if (h === '#upload') setView('upload');
+                    else setView('display');
+                };
+                window.addEventListener('hashchange', handleHash);
+                handleHash();
+                return () => window.removeEventListener('hashchange', handleHash);
+            }, []);
+
+            // Hard reload interval removed to prevent Autoplay Policy override issues.
+            // Firebase onSnapshot real-time sync makes this redundant anyway.
+
+            if (view === 'upload') return <UploadView slides={slides} community={community} onUploadSlides={setSlides} onUploadCommunity={setCommunity} />;
+            
+            if (view === 'admin') return <AdminView data={{settings, messages, status, slides, qrCodes, community, events}} onUpdate={(newData) => {
+                setSettings(newData.settings);
+                setMessages(newData.messages);
+                setStatus(newData.status);
+                setSlides(newData.slides);
+                setQrCodes(newData.qrCodes);
+                setCommunity(newData.community);
+                setEvents(newData.events);
+            }} />;
+            
+            return (
+                <div 
+                    className={`h-screen w-screen flex flex-col font-sans overflow-hidden transition-colors duration-500 ${isDark ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-900 via-[#111] to-black text-white' : 'bg-gradient-to-br from-gray-50 to-gray-200 text-gray-900'}`}
+                    style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }} 
+                >
+                    <TopHeader isDark={isDark} />
+                    <div className="flex-1 flex gap-6 p-6 pb-20 overflow-hidden relative z-10">
+                        <div className="w-2/5 h-full">
+                            <CarouselBoard messages={messages} community={community} events={events} qrCodes={qrCodes} isDark={isDark} />
+                        </div>
+                        <div className="w-3/5 h-full flex flex-col gap-6">
+                            <div className="h-full w-full relative">
+                                {/* Decorative glow behind slideshow */}
+                                <div className={`absolute -inset-4 rounded-[3rem] blur-3xl opacity-20 ${isDark ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-transparent'} -z-10`}></div>
+                                <ImageSlideshow slides={slides} isDark={isDark} />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <NewsTicker />
+                    <BackgroundMusic enabled={settings && settings.musicEnabled} volume={settings && settings.volume} url={settings && settings.musicUrl} />
+                    
+                    <div className="absolute bottom-0 left-0 w-24 h-12 z-50 opacity-0 hover:opacity-100 flex items-center justify-center gap-2 bg-black/50 transition-opacity rounded-tr-xl">
+                         <a href="#admin" className="text-white bg-gray-700 p-2 rounded-full"><SafeLucide name="settings" className="w-4 h-4" /></a>
+                    </div>
+                </div>
+            );
+        };
+
+        function mountApp() {
+            const rootEl = document.getElementById('root');
+            if (!rootEl) return;
+            try {
+                if (typeof ReactDOM !== 'undefined' && ReactDOM.createRoot) {
+                    const root = ReactDOM.createRoot(rootEl);
+                    root.render(
+                        <ErrorBoundary>
+                            <App />
+                        </ErrorBoundary>
+                    );
+                } else if (typeof ReactDOM !== 'undefined' && ReactDOM.render) {
+                    ReactDOM.render(
+                        <ErrorBoundary>
+                            <App />
+                        </ErrorBoundary>,
+                        rootEl
+                    );
+                } else {
+                    console.error("ReactDOM failed to load");
+                    rootEl.innerHTML = '<div style="color:white; text-align:center; padding: 20px; font-family: sans-serif;">שגיאה בטעינת ספריות CDN. נא לרענן את העמוד.</div>';
+                }
+            } catch (e) {
+                console.error("App mounting exception:", e);
+                rootEl.innerHTML = '<div style="color:white; text-align:center; padding: 20px; font-family: sans-serif;">שגיאת אתחול: ' + e.message + '</div>';
+            }
+        }
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            mountApp();
+        } else {
+            document.addEventListener('DOMContentLoaded', mountApp);
+            window.addEventListener('load', mountApp);
+        }
+    </script>
+</body>
+</html>
