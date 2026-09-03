@@ -1130,13 +1130,19 @@
                     const cleanName = 'bg_music_' + Date.now() + '.' + fileExt;
                     const storageRef = storage.ref().child('audio/' + cleanName);
                     
-                    const uploadTask = storageRef.put(file);
+                    const metadata = { contentType: file.type || 'audio/mp3' };
+                    
+                    // Read into ArrayBuffer first to prevent Android WebView chunking hangs
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const buffer = e.target.result;
+                        const uploadTask = storageRef.put(buffer, metadata);
 
-                    uploadTask.on('state_changed', 
-                        function(snapshot) {
-                            const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                            setUploadProgress(progress);
-                        }, 
+                        uploadTask.on('state_changed', 
+                            function(snapshot) {
+                                const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                                setUploadProgress(progress);
+                            }, 
                         function(error) {
                             console.error("Audio upload error:", error);
                             alert("שגיאה בהעלאת הקובץ: " + error.message);
@@ -1155,6 +1161,8 @@
                             });
                         }
                     );
+                    }; // close reader.onload
+                    reader.readAsArrayBuffer(file); // Trigger the read
                 } catch (err) {
                     console.error(err);
                     alert("שגיאה בהעלאה");
