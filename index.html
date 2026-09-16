@@ -338,22 +338,17 @@
                         if (res.ok) {
                             const data = await res.json();
                             if (data.items) {
-                                let parasha = "", candles = "", havdalah = "", candleDate = null;
-                                data.items.forEach(item => {
-                                    if (item.category === 'parashat') parasha = item.hebrew;
-                                    if (item.category === 'candles') {
-                                        candleDate = item.date; // ISO string
-                                        const date = new Date(item.date);
-                                        candles = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-                                    }
-                                    if (item.category === 'havdalah') {
-                                        const date = new Date(item.date);
-                                        havdalah = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-                                    }
-                                });
-                                // parasha might be empty during some holidays
-                                if (candles && havdalah && candleDate) {
-                                    setShabbat({ parasha: parasha || "חג שמח", candles, havdalah, candleDate });
+                                const parashaItem = data.items.find(item => item.category === 'parashat');
+                                const candlesItem = data.items.find(item => item.category === 'candles');
+                                const havdalahItem = data.items.find(item => item.category === 'havdalah');
+                                
+                                const parasha = parashaItem ? parashaItem.hebrew : "חג שמח";
+                                if (candlesItem && havdalahItem) {
+                                    const cDate = new Date(candlesItem.date);
+                                    const hDate = new Date(havdalahItem.date);
+                                    const candles = cDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    const havdalah = hDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                    setShabbat({ parasha, candles, havdalah, candleDate: candlesItem.date });
                                 }
                             }
                         }
@@ -738,9 +733,9 @@
                 const cDate = new Date(shabbat.candleDate);
                 cDate.setHours(0, 0, 0, 0);
                 const diffDays = Math.round((cDate - today) / (1000 * 60 * 60 * 24));
-                // diffDays <= 2 means Wednesday(2), Thursday(1), Friday(0)
+                // diffDays <= 3 means Tuesday(3), Wednesday(2), Thursday(1), Friday(0)
                 // diffDays >= -1 means Saturday(-1)
-                if (diffDays <= 2 && diffDays >= -1) {
+                if (diffDays <= 3 && diffDays >= -1) {
                     hasShabbat = true;
                 }
             }
@@ -1131,18 +1126,13 @@
                     const storageRef = storage.ref().child('audio/' + cleanName);
                     
                     const metadata = { contentType: file.type || 'audio/mp3' };
-                    
-                    // Read as DataURL and use putString to bypass resumable upload bugs
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const dataUrl = e.target.result;
-                        const uploadTask = storageRef.putString(dataUrl, 'data_url', metadata);
+                    const uploadTask = storageRef.put(file, metadata);
 
-                        uploadTask.on('state_changed', 
-                            function(snapshot) {
-                                const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                                setUploadProgress(progress);
-                            }, 
+                    uploadTask.on('state_changed', 
+                        function(snapshot) {
+                            const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                            setUploadProgress(progress);
+                        }, 
                         function(error) {
                             console.error("Audio upload error:", error);
                             alert("שגיאה בהעלאת הקובץ: " + error.message);
@@ -1161,11 +1151,9 @@
                             });
                         }
                     );
-                    }; // close reader.onload
-                    reader.readAsDataURL(file); // Trigger the read
                 } catch (err) {
                     console.error(err);
-                    alert("שגיאה בהעלאה");
+                    alert("שגיאה בהעלאה: " + err.message);
                     setUploadingAudio(false);
                 }
             };
