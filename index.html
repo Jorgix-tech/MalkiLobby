@@ -1,4 +1,4 @@
-<!-- MASTER V3.9 - CUSTOM LOGOS & NEWS RSS VIA ADMIN (Updated: 2026-09-30) -->
+<!-- MASTER V4.0 - NEWS PRESETS & UPLOAD LOGOS (Updated: 2026-09-30) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -533,8 +533,8 @@
             return (
                 <div className={`h-32 ${bgClass} flex items-center justify-between px-8 border-b border-white/10 relative z-20 transition-all duration-500`}>
                     <div className="flex items-center gap-6 w-1/4">
-                        <div className={`${isDark ? 'bg-white/10' : 'bg-gray-100'} p-3 rounded-2xl backdrop-blur-sm shadow-inner shrink-0`}>
-                            <img src={logoUrl || BUILDING_LOGO_URL} alt="Logo" className="w-16 h-16 object-contain" />
+                        <div className={`${isDark ? 'bg-white/10' : 'bg-gray-100'} p-2 rounded-2xl backdrop-blur-sm shadow-inner shrink-0`}>
+                            <img src={logoUrl || BUILDING_LOGO_URL} alt="Logo" className="w-24 h-24 object-contain" />
                         </div>
                         <div className="flex flex-col">
                             <h1 className={`text-4xl font-black tracking-tight leading-tight bg-clip-text text-transparent bg-gradient-to-l from-blue-400 via-indigo-400 to-purple-400`} style={{fontFamily: "'Rubik', sans-serif"}}>{BUILDING_NAME}</h1>
@@ -993,8 +993,8 @@
                     <div className="w-full max-w-md space-y-6">
                         <div className="text-center">
                             <div className="relative inline-block">
-                                <img src={logoUrl || BUILDING_LOGO_URL} className="w-24 h-24 mx-auto rounded-full bg-white p-2 object-contain shadow-2xl border-4 border-gray-800" />
-                                <div className="absolute bottom-0 right-0 bg-green-500 rounded-full p-1.5 border-2 border-gray-900">
+                                <img src={logoUrl || BUILDING_LOGO_URL} className="w-32 h-32 mx-auto rounded-full bg-white p-2 object-contain shadow-2xl border-4 border-gray-800" />
+                                <div className="absolute bottom-0 right-0 bg-green-500 rounded-full p-2 border-2 border-gray-900">
                                     <SafeLucide name="check" className="w-4 h-4 text-white" />
                                 </div>
                             </div>
@@ -1102,6 +1102,22 @@
 
             const [uploadingAudio, setUploadingAudio] = useState(false);
             const [uploadProgress, setUploadProgress] = useState(0);
+
+            const handleLogoUpload = async (e, settingKey) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const ext = file.name.split('.').pop();
+                    const ref = storage.ref().child('logos/' + Date.now() + '.' + ext);
+                    await ref.put(file);
+                    const url = await ref.getDownloadURL();
+                    updateSettings(settingKey, url);
+                    alert("התמונה הועלתה בהצלחה!");
+                } catch (err) {
+                    console.error(err);
+                    alert("שגיאה בהעלאת התמונה");
+                }
+            };
 
             const handleAudioUpload = (e) => {
                 const file = e.target.files[0];
@@ -1410,32 +1426,66 @@
                                 <SafeLucide name="link" className="w-5 h-5" /> קישורים ולוגואים (הגדרות מתקדמות)
                             </h2>
                             <div className="grid gap-4 md:grid-cols-2">
-                                <div className="bg-gray-700/50 p-4 rounded-xl">
-                                    <label className="block text-sm font-bold mb-2">לוגו בניין (URL)</label>
-                                    <input 
-                                        value={settings.buildingLogoUrl || ""}
-                                        onChange={(e) => updateSettings('buildingLogoUrl', e.target.value)}
-                                        placeholder="השאר ריק לברירת מחדל"
-                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr"
-                                    />
+                                <div className="bg-gray-700/50 p-4 rounded-xl flex flex-col gap-2">
+                                    <label className="block text-sm font-bold">לוגו בניין (URL)</label>
+                                    <div className="flex gap-2 items-center">
+                                        <input 
+                                            value={settings.buildingLogoUrl || ""}
+                                            onChange={(e) => updateSettings('buildingLogoUrl', e.target.value)}
+                                            placeholder="השאר ריק לברירת מחדל"
+                                            className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr flex-1"
+                                        />
+                                        <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded shrink-0" title="העלה תמונה">
+                                            <SafeLucide name="upload" className="w-5 h-5" />
+                                            <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'buildingLogoUrl')} className="hidden" />
+                                        </label>
+                                    </div>
                                 </div>
-                                <div className="bg-gray-700/50 p-4 rounded-xl">
-                                    <label className="block text-sm font-bold mb-2">מקור חדשות RSS (URL)</label>
+                                <div className="bg-gray-700/50 p-4 rounded-xl flex flex-col gap-2">
+                                    <label className="block text-sm font-bold">מקור חדשות RSS</label>
+                                    <select 
+                                        value={
+                                            (!settings.newsApiUrl || settings.newsApiUrl.includes("ynet.co.il")) ? "ynet" :
+                                            (settings.newsApiUrl.includes("mako.co.il")) ? "n12" :
+                                            (settings.newsApiUrl.includes("walla.co.il")) ? "walla" :
+                                            (settings.newsApiUrl.includes("israelhayom.co.il")) ? "israelhayom" : "custom"
+                                        }
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val === 'ynet') { updateSettings('newsApiUrl', ''); updateSettings('newsLogoUrl', ''); }
+                                            else if (val === 'n12') { updateSettings('newsApiUrl', 'https://rcs.mako.co.il/rss/31750a2610f26110VgnVCM1000005201000aRCRD.xml'); updateSettings('newsLogoUrl', 'https://upload.wikimedia.org/wikipedia/he/thumb/3/30/N12_news.svg/512px-N12_news.svg.png'); }
+                                            else if (val === 'walla') { updateSettings('newsApiUrl', 'https://rss.walla.co.il/feed/1?type=main'); updateSettings('newsLogoUrl', 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Walla_Logo.svg/512px-Walla_Logo.svg.png'); }
+                                            else if (val === 'israelhayom') { updateSettings('newsApiUrl', 'https://www.israelhayom.co.il/rss.xml'); updateSettings('newsLogoUrl', 'https://upload.wikimedia.org/wikipedia/he/thumb/4/46/Israel_Hayom_Logo.svg/512px-Israel_Hayom_Logo.svg.png'); }
+                                        }}
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-right"
+                                    >
+                                        <option value="ynet">Ynet (ברירת מחדל)</option>
+                                        <option value="n12">N12 - חדשות 12</option>
+                                        <option value="walla">וואלה! חדשות</option>
+                                        <option value="israelhayom">ישראל היום</option>
+                                        <option value="custom">התאמה אישית (Custom)</option>
+                                    </select>
                                     <input 
                                         value={settings.newsApiUrl || ""}
                                         onChange={(e) => updateSettings('newsApiUrl', e.target.value)}
-                                        placeholder="השאר ריק ל-YNET"
-                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr"
+                                        placeholder="לינק מותאם אישית... (השאר ריק ל-YNET)"
+                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-xs text-left dir-ltr mt-1"
                                     />
                                 </div>
-                                <div className="bg-gray-700/50 p-4 rounded-xl md:col-span-2">
-                                    <label className="block text-sm font-bold mb-2">לוגו חדשות (URL)</label>
-                                    <input 
-                                        value={settings.newsLogoUrl || ""}
-                                        onChange={(e) => updateSettings('newsLogoUrl', e.target.value)}
-                                        placeholder="השאר ריק ל-YNET"
-                                        className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr"
-                                    />
+                                <div className="bg-gray-700/50 p-4 rounded-xl md:col-span-2 flex flex-col gap-2">
+                                    <label className="block text-sm font-bold">לוגו חדשות (URL)</label>
+                                    <div className="flex gap-2 items-center">
+                                        <input 
+                                            value={settings.newsLogoUrl || ""}
+                                            onChange={(e) => updateSettings('newsLogoUrl', e.target.value)}
+                                            placeholder="השאר ריק ל-YNET"
+                                            className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr flex-1"
+                                        />
+                                        <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded shrink-0" title="העלה תמונה">
+                                            <SafeLucide name="upload" className="w-5 h-5" />
+                                            <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'newsLogoUrl')} className="hidden" />
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </section>
