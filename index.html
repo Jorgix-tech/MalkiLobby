@@ -1,4 +1,4 @@
-<!-- MASTER V4.0 - NEWS PRESETS & UPLOAD LOGOS (Updated: 2026-09-30) -->
+<!-- MASTER V4.1 - FIX LOGO UPLOAD & RSS SELECT (Updated: 2026-09-30) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -670,7 +670,7 @@
                 fetchNews();
                 const interval = setInterval(fetchNews, 120000);
                 return () => clearInterval(interval);
-            }, []);
+            }, [apiUrl]);
 
             return (
                 <div className="fixed bottom-0 left-0 w-full bg-red-700 text-white h-16 flex items-center z-50 border-t-4 border-red-900 shadow-2xl overflow-hidden">
@@ -1108,7 +1108,7 @@
                 if (!file) return;
                 try {
                     const ext = file.name.split('.').pop();
-                    const ref = storage.ref().child('logos/' + Date.now() + '.' + ext);
+                    const ref = storage.ref().child('slides/' + Date.now() + '_logo.' + ext);
                     await ref.put(file);
                     const url = await ref.getDownloadURL();
                     updateSettings(settingKey, url);
@@ -1237,7 +1237,7 @@
             };
             
             const updateSettings = (key, value) => {
-                setSettings({ ...settings, [key]: value });
+                setSettings(prev => ({ ...prev, [key]: value }));
             };
             
             const [aiLoading, setAiLoading] = useState(null); 
