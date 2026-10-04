@@ -1,4 +1,4 @@
-<!-- MASTER V4.4 - FIX ADMIN NAVIGATION ABORTING FIREBASE WRITES (Updated: 2026-10-04) -->
+<!-- MASTER V4.5 - FIX QR ADD & UPLOAD PROGRESS (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -958,16 +958,44 @@
                 }
             };
 
+            const [uploadProgress, setUploadProgress] = useState(0);
+
             const handleSubmitImage = (e) => {
                 e.preventDefault();
                 if (!file) return;
+                
+                if (!storage) {
+                    alert("שגיאה: שירות האחסון אינו זמין.");
+                    return;
+                }
+
                 setLoading(true);
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    onUploadSlides([...slides, { id: Date.now(), url: reader.result, status: 'pending', date: new Date().toLocaleDateString() }]);
-                    setLoading(false); setFile(null); setMessage("התמונה נשלחה לאישור הוועד! תודה רבה."); setTimeout(() => setMessage(""), 5000);
-                };
-                reader.readAsDataURL(file);
+                setUploadProgress(0);
+
+                const ext = file.name.split('.').pop() || 'jpg';
+                const ref = storage.ref().child('slides/' + Date.now() + '_slide.' + ext);
+                const uploadTask = ref.put(file);
+
+                uploadTask.on('state_changed', 
+                    (snapshot) => {
+                        const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                        setUploadProgress(progress);
+                    },
+                    (error) => {
+                        console.error(error);
+                        alert("שגיאה בהעלאת התמונה");
+                        setLoading(false);
+                    },
+                    async () => {
+                        const url = await uploadTask.snapshot.ref.getDownloadURL();
+                        onUploadSlides([...slides, { id: Date.now(), url: url, status: 'pending', date: new Date().toLocaleDateString() }]);
+                        setLoading(false);
+                        setFile(null);
+                        setUploadProgress(0);
+                        setMessage("התמונה נשלחה לאישור הוועד! תודה רבה.");
+                        setTimeout(() => setMessage(""), 5000);
+                    }
+                );
             };
 
             const handleSubmitCommunity = (e) => {
@@ -1041,9 +1069,14 @@
                                             </div>
                                         )}
                                     </div>
+                                    {loading && uploadProgress > 0 && (
+                                        <div className="w-full bg-gray-700 rounded-full h-2.5 mt-2">
+                                            <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
+                                        </div>
+                                    )}
                                     <button disabled={loading} className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white py-3.5 rounded-xl font-bold shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2">
                                         {loading ? <SafeLucide name="loader-2" className="w-5 h-5 animate-spin" /> : <SafeLucide name="send" className="w-5 h-5" />}
-                                        {loading ? "מעלה..." : "שלח לאישור"}
+                                        {loading ? (uploadProgress > 0 ? `מעלה... ${uploadProgress}%` : "מעבד...") : "שלח לאישור"}
                                     </button>
                                 </form>
                             ) : (
@@ -1244,6 +1277,16 @@
             
             const updateQr = (id, field, value) => {
                 setQrCodes(qrCodes.map(q => q.id === id ? { ...q, [field]: value } : q));
+            };
+            
+            const addQr = () => {
+                if (qrCodes.length >= 4) return alert("ניתן להוסיף עד 4 ברקודים בלבד.");
+                const newId = qrCodes.length > 0 ? Math.max(...qrCodes.map(q => q.id)) + 1 : 1;
+                setQrCodes([...qrCodes, { id: newId, label: "ברקוד חדש", link: "https://" }]);
+            };
+
+            const removeQr = (id) => {
+                setQrCodes(qrCodes.filter(q => q.id !== id));
             };
             
             const updateSettings = (key, value) => {
@@ -1664,13 +1707,21 @@
                         </section>
 
                         <section className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
-                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                <SafeLucide name="qr-code" className="w-5 h-5" /> ניהול ברקודים (QR)
-                            </h2>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold flex items-center gap-2">
+                                    <SafeLucide name="qr-code" className="w-5 h-5" /> ניהול ברקודים (QR)
+                                </h2>
+                                {qrCodes.length < 4 && (
+                                    <button onClick={addQr} className="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg">+ ברקוד</button>
+                                )}
+                            </div>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {qrCodes.map(qr => (
-                                    <div key={qr.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
-                                        <div className="mb-2">
+                                    <div key={qr.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600 relative group">
+                                        <button onClick={() => removeQr(qr.id)} className="absolute top-2 left-2 text-red-400 bg-gray-900 p-1 rounded-full opacity-60 hover:opacity-100 z-10">
+                                            <SafeLucide name="trash-2" className="w-4 h-4" />
+                                        </button>
+                                        <div className="mb-2 pr-6">
                                             <label className="text-xs text-gray-400 font-bold">כותרת</label>
                                             <input value={qr.label} onChange={(e) => updateQr(qr.id, 'label', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-yellow-400 font-bold" />
                                         </div>
