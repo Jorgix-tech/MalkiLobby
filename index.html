@@ -1,4 +1,4 @@
-<!-- MASTER V4.3 - FIX ADMIN REFRESH SAVE BUG & LOGIN FORM (Updated: 2026-10-04) -->
+<!-- MASTER V4.4 - FIX ADMIN NAVIGATION ABORTING FIREBASE WRITES (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -1279,7 +1279,7 @@
             
             const handleBack = (e) => {
                 e.preventDefault();
-                window.location.href = window.location.pathname; 
+                window.location.hash = '';
             };
 
             if (!auth) {
