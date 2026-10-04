@@ -1,4 +1,4 @@
-<!-- MASTER V4.7 - FIX UPLOAD COMPRESSION AND LOGO SPINNERS (Updated: 2026-10-04) -->
+<!-- MASTER V4.8 - FIX POISON PILL LOCALSTORAGE (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -249,7 +249,11 @@
             const [data, setData] = useState(() => {
                 try {
                     const cached = localStorage.getItem(STORAGE_KEY);
-                    return cached ? JSON.parse(cached) : initialValue;
+                    let parsed = cached ? JSON.parse(cached) : initialValue;
+                    if (Array.isArray(parsed)) {
+                        parsed = parsed.filter(item => !(item && item.url && typeof item.url === 'string' && item.url.startsWith('data:image') && item.url.length > 800000));
+                    }
+                    return parsed;
                 } catch (e) {
                     return initialValue;
                 }
@@ -261,7 +265,10 @@
                     try {
                         unsubscribe = db.collection('appData').doc(STORAGE_KEY).onSnapshot(doc => {
                             if (doc.exists) {
-                                const remoteData = doc.data().items;
+                                let remoteData = doc.data().items;
+                                if (Array.isArray(remoteData)) {
+                                    remoteData = remoteData.filter(item => !(item && item.url && typeof item.url === 'string' && item.url.startsWith('data:image') && item.url.length > 800000));
+                                }
                                 if (!Array.isArray(remoteData) && typeof remoteData === 'object') {
                                      setData({ ...initialValue, ...remoteData });
                                 } else {
@@ -282,6 +289,16 @@
             }, []);
 
             const updateData = (newData) => {
+                // Poison pill protection: remove items with massive base64 URLs that would block Firestore writes (limit is 1MB per document)
+                if (Array.isArray(newData)) {
+                    newData = newData.filter(item => {
+                        if (item && item.url && typeof item.url === 'string' && item.url.startsWith('data:image') && item.url.length > 800000) {
+                            console.warn("Removed massive base64 image to prevent Firestore block:", item.id);
+                            return false;
+                        }
+                        return true;
+                    });
+                }
                 setData(newData);
                 try {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
