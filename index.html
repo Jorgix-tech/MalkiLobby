@@ -1,4 +1,4 @@
-<!-- MASTER V4.8 - FIX POISON PILL LOCALSTORAGE (Updated: 2026-10-04) -->
+<!-- MASTER V4.9 - FIX NEWS LOGO CSS INVERT (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -696,7 +696,7 @@
             return (
                 <div className="fixed bottom-0 left-0 w-full bg-red-700 text-white h-16 flex items-center z-50 border-t-4 border-red-900 shadow-2xl overflow-hidden">
                     <div className="bg-red-900 h-full px-4 flex items-center z-20 shadow-[5px_0_15px_rgba(0,0,0,0.3)] whitespace-nowrap shrink-0">
-                        <img src={logoUrl || NEWS_LOGO_URL} alt="NEWS" className="h-8 brightness-0 invert" />
+                        <img src={logoUrl || NEWS_LOGO_URL} alt="NEWS" className="h-8 object-contain bg-white/10 rounded px-1" />
                     </div>
                     <div className="flex-1 overflow-hidden relative h-full flex items-center bg-red-700">
                         <div className="whitespace-nowrap absolute" style={{ animation: 'ticker 300s linear infinite', paddingLeft: '100%' }}>
