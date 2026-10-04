@@ -1,4 +1,4 @@
-<!-- MASTER V4.6 - FIX UPLOAD INTERFACES (Updated: 2026-10-04) -->
+<!-- MASTER V4.7 - FIX UPLOAD COMPRESSION AND LOGO SPINNERS (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -283,7 +283,11 @@
 
             const updateData = (newData) => {
                 setData(newData);
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+                } catch (e) {
+                    console.error("Local storage quota exceeded:", e);
+                }
                 if (db && !dbDisabled) {
                     db.collection('appData').doc(STORAGE_KEY).set({ items: newData }).catch(err => {
                         if (err.code === 'permission-denied') {
@@ -964,8 +968,38 @@
                 setLoading(true);
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    onUploadSlides([...slides, { id: Date.now(), url: reader.result, status: 'pending', date: new Date().toLocaleDateString() }]);
-                    setLoading(false); setFile(null); setMessage("התמונה נשלחה לאישור הוועד! תודה רבה."); setTimeout(() => setMessage(""), 5000);
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 1200;
+                        const MAX_HEIGHT = 1200;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Compress to JPEG with 0.7 quality
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+                        onUploadSlides([...slides, { id: Date.now(), url: compressedBase64, status: 'pending', date: new Date().toLocaleDateString() }]);
+                        setLoading(false); setFile(null); setMessage("התמונה נשלחה לאישור הוועד! תודה רבה."); setTimeout(() => setMessage(""), 5000);
+                    };
+                    img.src = reader.result;
                 };
                 reader.readAsDataURL(file);
             };
@@ -1113,43 +1147,50 @@
             const [uploadingAudio, setUploadingAudio] = useState(false);
             const [uploadProgress, setUploadProgress] = useState(0);
 
-            const [uploadingLogo, setUploadingLogo] = useState(false);
+            const [uploadingLogo, setUploadingLogo] = useState(null);
 
             const handleLogoUpload = (e, settingKey) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 
-                if (!storage) {
-                    alert("שגיאה: שירות האחסון אינו זמין.");
-                    return;
-                }
+                setUploadingLogo(settingKey);
+                
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 400; // Logos don't need to be huge
+                        const MAX_HEIGHT = 400;
+                        let width = img.width;
+                        let height = img.height;
 
-                setUploadingLogo(true);
-                setUploadProgress(0);
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
 
-                const ext = file.name.split('.').pop();
-                const ref = storage.ref().child('slides/' + Date.now() + '_logo.' + ext);
-                const uploadTask = ref.put(file);
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Compress to PNG to preserve transparency
+                        const compressedBase64 = canvas.toDataURL('image/png', 0.8);
 
-                uploadTask.on('state_changed', 
-                    (snapshot) => {
-                        const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                        setUploadProgress(progress);
-                    },
-                    (error) => {
-                        console.error(error);
-                        alert("שגיאה בהעלאת התמונה");
-                        setUploadingLogo(false);
-                        setUploadProgress(0);
-                    },
-                    async () => {
-                        const url = await uploadTask.snapshot.ref.getDownloadURL();
-                        updateSettings(settingKey, url);
-                        setUploadingLogo(false);
-                        setUploadProgress(0);
-                        alert("התמונה הועלתה בהצלחה!");
-                    }
-                );
+                        updateSettings(settingKey, compressedBase64);
+                        setUploadingLogo(null);
+                    };
+                    img.src = reader.result;
+                };
+                reader.readAsDataURL(file);
             };
 
             const handleAudioUpload = (e) => {
@@ -1491,9 +1532,9 @@
                                             placeholder="השאר ריק לברירת מחדל"
                                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr flex-1"
                                         />
-                                        {uploadingLogo ? (
-                                            <div className="bg-blue-600/50 text-white p-2 rounded shrink-0 flex items-center justify-center gap-1 w-16" title="מעלה...">
-                                                <span className="text-xs font-bold">{uploadProgress}%</span>
+                                        {uploadingLogo === 'buildingLogoUrl' ? (
+                                            <div className="bg-blue-600/50 text-white p-2 rounded shrink-0 flex items-center justify-center w-10" title="מעבד...">
+                                                <SafeLucide name="loader-2" className="w-5 h-5 animate-spin" />
                                             </div>
                                         ) : (
                                             <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded shrink-0" title="העלה תמונה">
@@ -1543,9 +1584,9 @@
                                             placeholder="השאר ריק ל-YNET"
                                             className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-left dir-ltr flex-1"
                                         />
-                                        {uploadingLogo ? (
-                                            <div className="bg-blue-600/50 text-white p-2 rounded shrink-0 flex items-center justify-center gap-1 w-16" title="מעלה...">
-                                                <span className="text-xs font-bold">{uploadProgress}%</span>
+                                        {uploadingLogo === 'newsLogoUrl' ? (
+                                            <div className="bg-blue-600/50 text-white p-2 rounded shrink-0 flex items-center justify-center w-10" title="מעבד...">
+                                                <SafeLucide name="loader-2" className="w-5 h-5 animate-spin" />
                                             </div>
                                         ) : (
                                             <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded shrink-0" title="העלה תמונה">
