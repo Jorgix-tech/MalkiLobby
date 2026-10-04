@@ -1,4 +1,4 @@
-<!-- MASTER V4.2 - FIX ADMIN STATE OVERWRITE BUG (Updated: 2026-10-04) -->
+<!-- MASTER V4.3 - FIX ADMIN REFRESH SAVE BUG & LOGIN FORM (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -1269,9 +1269,12 @@
                 }
             };
 
+            const [saveMessage, setSaveMessage] = useState("");
+
             const handleSave = () => {
                 onUpdate({ settings, messages, status, slides, qrCodes, community, events });
-                alert("הנתונים נשמרו בהצלחה!");
+                setSaveMessage("הנתונים נשמרו בהצלחה!");
+                setTimeout(() => setSaveMessage(""), 3000);
             };
             
             const handleBack = (e) => {
@@ -1287,19 +1290,26 @@
                         </a>
                         <div className="bg-gray-900 p-8 rounded-2xl border border-gray-700 w-full max-w-sm text-center">
                             <h2 className="text-xl text-white font-bold mb-4">כניסת ועד</h2>
-                            <input 
-                                type="password" 
-                                placeholder="סיסמה" 
-                                className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 mb-4 text-center"
-                                value={pass}
-                                onChange={e => setPass(e.target.value)}
-                            />
-                            <button 
-                                onClick={() => pass === ADMIN_PASSWORD ? setAuth(true) : alert("סיסמה שגויה")}
-                                className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg"
-                            >
-                                כניסה
-                            </button>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                if (pass === ADMIN_PASSWORD) setAuth(true);
+                                else alert("סיסמה שגויה");
+                            }}>
+                                <input 
+                                    type="password" 
+                                    placeholder="סיסמה" 
+                                    className="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 mb-4 text-center dir-ltr"
+                                    value={pass}
+                                    onChange={e => setPass(e.target.value)}
+                                    autoFocus
+                                />
+                                <button 
+                                    type="submit"
+                                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg"
+                                >
+                                    כניסה
+                                </button>
+                            </form>
                         </div>
                     </div>
                 );
@@ -1320,9 +1330,12 @@
                             </a>
                             <h1 className="text-2xl font-bold text-yellow-400">ניהול מסך לובי</h1>
                         </div>
-                        <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
-                            <SafeLucide name="save" className="w-4 h-4" /> שמור שינויים
-                        </button>
+                        <div className="flex items-center gap-4">
+                            {saveMessage && <span className="text-green-400 font-bold animate-pulse">{saveMessage}</span>}
+                            <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
+                                <SafeLucide name="save" className="w-4 h-4" /> שמור שינויים
+                            </button>
+                        </div>
                     </header>
 
                     <div className="max-w-4xl mx-auto space-y-8 pb-20">
