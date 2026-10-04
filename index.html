@@ -1,4 +1,4 @@
-<!-- MASTER V4.1 - FIX LOGO UPLOAD & RSS SELECT (Updated: 2026-09-30) -->
+<!-- MASTER V4.2 - FIX ADMIN STATE OVERWRITE BUG (Updated: 2026-10-04) -->
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -1099,6 +1099,16 @@
             const [community, setCommunity] = useState(data.community || []);
             const [events, setEvents] = useState(data.events || []);
             const [qrCodes, setQrCodes] = useState(data.qrCodes);
+
+            useEffect(() => {
+                setSettings(data.settings);
+                setMessages(data.messages);
+                setStatus(data.status);
+                setSlides(data.slides);
+                setCommunity(data.community || []);
+                setEvents(data.events || []);
+                setQrCodes(data.qrCodes);
+            }, [JSON.stringify(data)]);
 
             const [uploadingAudio, setUploadingAudio] = useState(false);
             const [uploadProgress, setUploadProgress] = useState(0);
